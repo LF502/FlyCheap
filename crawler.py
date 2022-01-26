@@ -152,8 +152,7 @@ def getTickets(fdate: date, dcity: str, acity: str) -> list():
                 else:
                     arrivalName = flight.get('arrivalAirportInfo').get('cityName')
                     airportCity[acity] = arrivalName
-                craftType = flight.get('craftTypeKindDisplayName')
-                craftType = re.match('(.)型',craftType).groups()[0] # Crafttype is S/M/L
+                craftType = flight.get('craftTypeKindDisplayName').strip('型')
                 ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
                 price = ticket.get('price').get('price')
                 rate = ticket.get('price').get('rate')
