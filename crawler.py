@@ -260,6 +260,7 @@ def generateXlsx(fdate: date, days: int = 30, codeList: list = ['BJS','CAN'], ig
                     wbook.close
                     print()
     total/=days
+    return ignoreNew
 
 
 def arrangeXlsx(path:str):
