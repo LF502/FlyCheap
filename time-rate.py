@@ -17,15 +17,13 @@ rtdict = {'小时段': []}
 for i in range(25):
     rtdict[i]=[]
 
-path = 'example'
-maxlen = 0
+path = './/2022-01-26'
 #collDate = path.split('-', 2)
 #collDate = datetime.date(int(collDate[0]), int(collDate[1]), int(collDate[2])).toordinal()
 for file in pathlib.Path(path).iterdir():
     # 原表格格式
     # 日期，星期，航司，机型，出发机场，到达机场，出发时间，到达时间，价格，折扣
     #  0     1    2     3      4        5        6        7      8     9
-    maxlen+= 1
     if not file.match('*.xlsx'):
         continue
     data = pandas.read_excel(file.joinpath()).iloc[ : , [6, 9]]
@@ -41,7 +39,7 @@ for file in pathlib.Path(path).iterdir():
     i = total = corr =0
     j = 1
     for item in data.get('折扣'):
-        dtime = round(alterlist[i])
+        dtime = int(alterlist[i])
         diff = dtime - corr
         if diff == 1:
             rtdict[corr].append(total/j)
@@ -58,8 +56,7 @@ for file in pathlib.Path(path).iterdir():
     else:
         rtdict[corr].append(total/j)
         if corr < 24:
-            for k in range(24-corr):
+            for j in range(24-corr):
                 corr+= 1
                 rtdict[corr].append(0)
-pandas.DataFrame(rtdict).to_excel('time-rate.xlsx', index=False, encoding='GBK')
-    
+pandas.DataFrame(rtdict).to_excel('.//time-rate.xlsx', index=False, encoding='GBK')
