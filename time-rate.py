@@ -14,49 +14,65 @@ airports = {'北京首都': 1, '北京大兴': 1, '上海虹桥': 1, '上海浦�
             '烟台': 0.15, '桂林': 0.1, '泉州': 0.1, '无锡': 0.1, '揭阳': 0.1, 
             '西宁': 0.1, '丽江': 0.1, '西双版纳': 0.1, '南阳': 0.1,}
 rtdict = {'小时段': []}
-for i in range(25):
+for i in range(24):
     rtdict[i]=[]
 
-path = './/2022-01-26'
+path = '2022-01-25'
 #collDate = path.split('-', 2)
 #collDate = datetime.date(int(collDate[0]), int(collDate[1]), int(collDate[2])).toordinal()
 for file in pathlib.Path(path).iterdir():
     # 原表格格式
     # 日期，星期，航司，机型，出发机场，到达机场，出发时间，到达时间，价格，折扣
     #  0     1    2     3      4        5        6        7      8     9
-    if not file.match('*.xlsx'):
+    if not file.match('*.xlsx') or '_' in file.name:
         continue
+    print('\r'+file.name,end=' processing...')
     data = pandas.read_excel(file.joinpath()).iloc[ : , [6, 9]]
     rtdict['小时段'].append(file.name.replace('~','-').strip('.xlsx'))
 
     alterlist = []
     for item in data.get('出发时'):
-        alterlist.append(item.hour + round(item.minute/60, 2))
+        alterlist.append(item.hour + round(item.minute / 60, 2))
     data.loc[:, '出发时'] = alterlist
     alterlist.sort()
     data = data.sort_values('出发时')
 
-    i = total = corr =0
+    i = total = 0
     j = 1
+    if int(alterlist[0]):   #key = hour, initialize the values before the first flight to 0 
+        for curr in range(0, int(alterlist[0])):
+            rtdict[curr].append(0)
+        curr+= 1
+    else:
+        curr = 0
     for item in data.get('折扣'):
         dtime = int(alterlist[i])
-        diff = dtime - corr
-        if diff == 1:
-            rtdict[corr].append(total/j)
-            corr+= 1
-            j = 0
-            total = 0
-        elif diff >=1:
-            for k in range(diff):
-                rtdict[corr].append(0)
-                corr+= 1
+        if (dtime - curr):
+            rtdict[curr].append(total / j)
+            for j in range(curr + 1, dtime):
+                rtdict[j].append(0) #fill blanks with 0
+            curr = dtime
+            j = total = 0
         total+= item
         j+= 1
         i+= 1
     else:
-        rtdict[corr].append(total/j)
-        if corr < 24:
-            for j in range(24-corr):
-                corr+= 1
-                rtdict[corr].append(0)
-pandas.DataFrame(rtdict).to_excel('.//time-rate.xlsx', index=False, encoding='GBK')
+        rtdict[curr].append(total / j)
+        curr+= 1
+        for j in range(24 - curr):
+            rtdict[curr + j].append(0)  #fill blanks with 0
+
+for i in range(24):
+    # del keys whose values are all None (all routes are inactive in the key hour)
+    j = 0
+    #print(i, len(rtdict[i]))
+    for item in rtdict[i]:
+        if item == 0:
+            j+= 1
+    else:
+        if j == len(rtdict[i]):
+            del rtdict[i]
+
+#print(rtdict)
+print('\nDone!')
+pandas.DataFrame(rtdict).to_excel(path+'_time-rate.xlsx', index=False, encoding='GBK')
