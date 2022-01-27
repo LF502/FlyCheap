@@ -1,10 +1,11 @@
 import datetime
-from datetime import date
-import requests
+import time
+from requests import get, post
 from json import dumps, loads
-import re
+from re import match
 import openpyxl
-import pathlib
+from openpyxl.styles import Font, Alignment
+from pathlib import Path
 
 def exits():
     print(' No need to process!')
@@ -78,7 +79,7 @@ def ignore(codeList: list, ignoreIn: set = None) -> set:
     return skipSet
 
 
-def getTickets(fdate: date, dcity: str, acity: str) -> list():
+def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
     "Get tickets from dep city to arr city on one date, put all data to the excel, and return a status code."
     try:
         dcityname = airportCity.get(dcity, None)
@@ -100,12 +101,15 @@ def getTickets(fdate: date, dcity: str, acity: str) -> list():
                 {"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
                  "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
         try:
-            with requests.get('http://127.0.0.1:5555/random') as proxy:
-                proxy=proxy.text.strip()
-                proxy={"http":"http://"+proxy}  # Set proxy: run in Docker / cmd -> cd ProxyPool -> docker-compose up -> (idle)
+            with get('http://127.0.0.1:5555/random') as proxy:
+                proxy = proxy.text.strip()
+                proxy = {"http":"http://"+proxy}  # Set proxy: run in Docker / cmd -> cd ProxyPool -> docker-compose up -> (idle)
         except:
-            proxy=None
-        reply = requests.post(url, data = dumps(request_payload), headers = header, proxies = proxy)   # -> json()
+            from random import random
+            proxy = None    #sleep time activates for no proxy running
+            print('\tNo porxy warn', end='\t')
+            time.sleep((round(3 * random(), 2)))
+        reply = post(url, data = dumps(request_payload), headers = header, proxies = proxy)   # -> json()
         response = reply.text
         #print(response)
         routeList = loads(response).get('data').get('routeList')   # -> list
@@ -138,7 +142,7 @@ def getTickets(fdate: date, dcity: str, acity: str) -> list():
                 arrivalTime = datetime.time(int(arrivalTime[0]),int(arrivalTime[1])) # Convert the time string to a time class
                 if dcityname == '北京' or dcityname == '上海' or dcityname== '成都':
                     departureName = flight.get('departureAirportInfo').get('airportName')
-                    departureName = dcityname + re.match('成?都?(.*?)国?际?机场',departureName).groups()[0]
+                    departureName = dcityname + match('成?都?(.*?)国?际?机场', departureName).groups()[0]
                 elif dcityname: # If dcityname exists, that means the code-name is in the default code-name dict
                     departureName = dcityname   # Multi-airport cities need the airport name while others do not
                 else:   # If dcityname is None, that means the code-name is not in the default code-name dict
@@ -146,7 +150,7 @@ def getTickets(fdate: date, dcity: str, acity: str) -> list():
                     airportCity[dcity] = departureName  # ...therefore it is added now 
                 if acityname == '北京' or acityname == '上海' or acityname== '成都':
                     arrivalName = flight.get('arrivalAirportInfo').get('airportName')
-                    arrivalName = acityname + re.match('成?都?(.*?)国?际?机场',arrivalName).groups()[0]
+                    arrivalName = acityname + match('成?都?(.*?)国?际?机场', arrivalName).groups()[0]
                 elif acityname:
                     arrivalName = acityname
                 else:
@@ -156,17 +160,18 @@ def getTickets(fdate: date, dcity: str, acity: str) -> list():
                 ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
                 price = ticket.get('price').get('price')
                 rate = ticket.get('price').get('rate')
-                datarows.append([fdate,dow,airlineName,craftType,departureName,arrivalName,departureTime,arrivalTime,price,rate,])
+                datarows.append([fdate, dow, airlineName, craftType, departureName, arrivalName, 
+                                 departureTime, arrivalTime, price, rate, ])
                 #日期，星期，航司，机型，出发机场，到达机场，出发时间，到达时间，价格，折扣
     except:
         return list()
     return datarows
 
 
-def generateXlsx(fdate: date, days: int = 30, codeList: list = ['BJS','CAN'], ignoreIn: set = None) -> set:
-    "Generate excels of flight tickets info, between the citys given and from the date given and days needed. "
-    "Return new ignorance city tuples in set."
-    import time
+def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','CAN'], ignoreIn: set = None) -> tuple:
+    '''Generate excels of flight tickets info, between the citys given and from the date given and days needed. 
+    Return tuple of file generated in int and new ignorance city tuples in set.'''
+
     global dayOfWeek, airportCity, total
     dayOfWeek={1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六',7:'星期日'}
     airportCity={
@@ -189,12 +194,12 @@ def generateXlsx(fdate: date, days: int = 30, codeList: list = ['BJS','CAN'], ig
         exits()
     if codesum <= 1:
         exits()
-    skipSet=ignore(codeList, ignoreIn)  # The set values are the coordinates that should not be processed.
-    idct=avgTime=0
-    total=(codesum*(codesum-1)*days-(days*len(skipSet)))/2
+    skipSet = ignore(codeList, ignoreIn)  # The set values are the coordinates that should not be processed.
+    idct = avgTime = filesum = 0
+    total = (codesum*(codesum-1)*days-(days*len(skipSet)))/2
     if total == 0 or codesum <= 1:
         exits()
-    ignoreNew=set()
+    ignoreNew = set()
 
     print('\rGetting data...')
     for dcity in range(codesum):
@@ -203,133 +208,82 @@ def generateXlsx(fdate: date, days: int = 30, codeList: list = ['BJS','CAN'], ig
                 continue
             if (dcity,acity) not in skipSet: # If the city tuple key / coordinate is not found, process.
                 cdate=fdate #reset
-                datarows=[]
+                datarows = []
                 for i in range(days):
 
-                    print('\r',end='')
-                    print('{}% >> '.format(int(idct/total*100)),end='') #progress indicator
+                    print('\r{}% >> '.format(int(idct/total*100)),end='') #progress indicator
                     if avgTime:
                         m, s = divmod(int((total-idct)*avgTime), 60)
                         h, m = divmod(m, 60)    #show est. remaining process time
-                        print('est. {0:02d}:{1:02d}:{2:02d} left >> '.format(h, m, s),end='')
+                        print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
                     else:
-                        print('est. waiting...... >> ',end='')
-                    print(codeList[dcity]+'-'+codeList[acity]+': '+cdate.isoformat(),end='')   #current processing flights
-                    currTime=time.time()
+                        print('eta waiting.. >> ',end='')
+                    print(codeList[dcity]+'-'+codeList[acity]+': '+cdate.isoformat(), end='')   #current processing flights
+                    currTime = time.time()
 
-                    for j in range(3):  # Get OUTbound flights data, 3 attempts for ample data.
-                        dataLen=len(datarows)
+                    '''Get OUTbound flights data, 3 attempts for ample data'''
+                    for j in range(3):
+                        dataLen = len(datarows)
                         datarows.extend(getTickets(cdate, codeList[dcity], codeList[acity]))
-                        if len(datarows)-dataLen >= 3:
+                        if len(datarows) - dataLen >= 3:
                             break
-                        elif i != 0 and len(datarows)-dataLen > 0:
+                        elif i != 0 and len(datarows) - dataLen > 0:
                             break
                     else:
                         if i == 0 and len(datarows) < 3:
-                            total-=days # In the first round, ignore the cities whose flight data is less than 3.
+                            total -= days # In the first round, ignore the cities whose flight data is less than 3.
                             print('...ignored')
-                            ignoreNew.add((codeList[dcity],codeList[acity]))
+                            ignoreNew.add((codeList[dcity], codeList[acity]))
                             break
 
-                    for j in range(3):  # Get INbound flights data, 3 attempts for ample data.
-                        dataLen=len(datarows)
+                    '''Get INbound flights data, 3 attempts for ample data'''
+                    for j in range(3):
+                        dataLen = len(datarows)
                         datarows.extend(getTickets(cdate, codeList[acity], codeList[dcity]))
                         if len(datarows)-dataLen >= 3:
                             break
-                        elif i != 0 and len(datarows)-dataLen > 0:
+                        elif i != 0 and len(datarows) - dataLen > 0:
                             break
                     else:
                         if i == 0 and len(datarows) - dataLen < 3:
-                            total-=days # In the first round, ignore the cities whose flight data is less than 3.
+                            total -= days # In the first round, ignore the cities whose flight data is less than 3.
                             print('...ignored')
-                            ignoreNew.add((codeList[dcity],codeList[acity]))
+                            ignoreNew.add((codeList[dcity], codeList[acity]))
                             break
 
-                    #sleep(round(sleeptime*random.random(),2))   #random sleep time, abandoned since the add of proxy
-                    cdate=cdate.fromordinal(cdate.toordinal()+1)    #one day forward
-                    idct+=1
-                    avgTime=(avgTime*(idct-1)+time.time()-currTime)/idct
+                    cdate = cdate.fromordinal(cdate.toordinal() + 1)    #one day forward
+                    idct += 1
+                    avgTime = (avgTime * (idct - 1) + time.time() - currTime) / idct
 
-                else:
-                    wbook=openpyxl.Workbook()
-                    wsheet=wbook.active
-                    for row in datarows:
-                        wsheet.append(row)
-                    wbook.save(corrDate+'\\{0}-{1}.xlsx'.format(codeList[dcity],codeList[acity]))
-                    wbook.close
-                    print()
-    total/=days
-    return ignoreNew
-
-
-def arrangeXlsx(path:str):
-    "Format every excel file and return the number of formatted files."
-    from openpyxl.styles import Font, Alignment
-    import time
-    i=avgTime=0
-    print('Formatting excel(s)...')
-    for file in pathlib.Path(path).iterdir():
-        if file.match('*.xlsx') and '~' not in file.name:   # Skip temp (hidden) and formatted excels
-
-            print('\r',end='')
-            print('{}% >> '.format(int(i/total*100)),end='') #progress indicator
-            if avgTime:
-                m, s = divmod(int((total-i)*avgTime), 60)
-                h, m = divmod(m, 60)    #show est. remaining process time
-                print('est. {0:02d}:{1:02d}:{2:02d} left >> '.format(h, m, s),end='')
-            else:
-                print('est. waiting...... >> '.format(round((total-i)*avgTime,1)),end='')
-            print(file.name.strip('.xlsx'),end='')   #current processing file
-            currTime=time.time()
-
-            wbook=openpyxl.load_workbook(file)
-            wsheet=wbook.active
-            if wsheet['A1'].value == '日期':    # Sign of formatted
-                wbook.save(path+'\\'+file.name.replace('-','~'))
+                '''Format the excel'''
+                wbook = openpyxl.Workbook()
+                wsheet = wbook.active
+                wsheet.column_dimensions['A'].width = 11
+                wsheet.column_dimensions['B'].width = 7
+                wsheet.column_dimensions['C'].width = 12
+                wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
+                wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
+                wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
+                for row in datarows:
+                    wsheet.append(row)
+                for row in wsheet.iter_rows(1, 1, 1, 10):
+                    for cell in row:
+                        cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
+                        cell.font = Font(bold = True)
+                for row in wsheet.iter_rows(2, wsheet.max_row, 7, 8):  # Adjust the dep time and arr time formats
+                    for cell in row:
+                        cell.number_format = 'HH:MM'
+                for row in wsheet.iter_rows(2, wsheet.max_row, 10, 10):    # Make the rate show as percentage
+                    for cell in row:
+                        cell.number_format = '0%'
+                for row in wsheet.iter_rows(2, wsheet.max_row, 4, 8):  # Alignment adjusts
+                    for cell in row:
+                        cell.alignment = Alignment(vertical='center',horizontal='center')
+                wbook.save(Path(corrDate) / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
                 wbook.close
-                file.unlink()
-                continue
-            wsheet.insert_rows(1,1)
-            wsheet['A1'].value = '日期'
-            wsheet['B1'].value = '星期'
-            wsheet['C1'].value = '航司'
-            wsheet['D1'].value = '机型'
-            wsheet['E1'].value = '出发机场'
-            wsheet['F1'].value = '到达机场'
-            wsheet['G1'].value = '出发时'
-            wsheet['H1'].value = '到达时'
-            wsheet['I1'].value = '价格'
-            wsheet['J1'].value = '折扣'
-            wsheet.column_dimensions['A'].width = 11
-            wsheet.column_dimensions['B'].width = 7
-            wsheet.column_dimensions['C'].width = 12
-            wsheet.column_dimensions['D'].width = 6
-            wsheet.column_dimensions['G'].width = 7.5
-            wsheet.column_dimensions['H'].width = 7.5
-            wsheet.column_dimensions['I'].width = 6
-            wsheet.column_dimensions['J'].width = 6
-            for row in wsheet.iter_rows(1,1,1,10):
-                for cell in row:
-                    cell.alignment=Alignment(vertical='center',horizontal='center')
-                    cell.font=Font(bold=True)
-            for row in wsheet.iter_rows(2,wsheet.max_row,7,8):  # Adjust the dep time and arr time formats
-                for cell in row:
-                    cell.number_format='HH:MM'
-            for row in wsheet.iter_rows(2,wsheet.max_row,10,10):    # Make the rate show as percentage
-                for cell in row:
-                    cell.number_format='0%'
-            for row in wsheet.iter_rows(2,wsheet.max_row,4,8):  # Alignment adjusts
-                for cell in row:
-                    cell.alignment=Alignment(vertical='center',horizontal='center')
-            wbook.save(path+'\\'+file.name.replace('-','~'))
-            wbook.close
-            file.unlink()
-
-            i+=1
-            avgTime=((avgTime*(i-1)+time.time()-currTime)/i)
-    return i
-
-
+                filesum += 1
+                print('\r{0}-{1} generated and formatted!               '.format(codeList[dcity], codeList[acity]))
+    return (filesum, ignoreNew)
 
 if __name__ == "__main__":
 
@@ -340,9 +294,9 @@ if __name__ == "__main__":
     global corrDate
     corrDate = str(datetime.datetime.now().date())
     #corrDate = 'debugging' #测试用例
-    path = pathlib.Path(corrDate)
+    path = Path(corrDate)
     if not path.exists():
-        pathlib.Path.mkdir(path)
+        Path.mkdir(path)
 
     #城市列表，处理表中各城市对的航班（第一天少于3个则忽略），分类有: 华北+东北、华东、西南、西北+新疆、中南
     cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
@@ -352,17 +306,15 @@ if __name__ == "__main__":
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     
     #调参得表: 起始年月日、往后天数、机场三字码列表；返回更新的忽略集
-    #ignoreNew = generateXlsx(date(2022,2,17),30,cities)
-    ignoreNew = generateXlsx(date(2022,2,17),30,['XMN','LHW','URC'],{('LHW','URC'),})    #测试用例
+    file = generateXlsx(datetime.date(2022,2,17),30,cities)
+    #file = generateXlsx(datetime.date(2022,2,27),3,['HGH','CKG'])    #测试用例
 
-    #整理表格
-    file=arrangeXlsx(corrDate)
-    print('\n', file, 'files ', end='') if file > 1 else print('\n', file, 'file ', end='')
+    print('\n', file[0], 'files ', end='') if file[0] > 1 else print('\n', file[0], 'file ', end='')
 
     #若有更新忽略集，导出并手动更新（建议）
-    if ignoreNew is not None:
+    if file[1] is not None:
         with open('IgnoreSet.txt', 'a', encoding = 'UTF-8') as updates:
-            updates.write(str(ignoreNew) + '\n')
+            updates.write(str(file[1]) + '\n')
         print('collected and formatted, ignorance set updated.')
     else:
         print('collected and formatted.')

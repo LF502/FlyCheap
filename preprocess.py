@@ -1,8 +1,8 @@
 import pandas
 import datetime
-import pathlib
+from pathlib import Path
 
-def main():
+def main(path: str):
     dayOfWeek = {'星期二': 0, '星期三': 0, '星期四': 0, '星期一': 0.5, '星期五': 0.5, '星期六': 1, '星期日': 1}
     craftType = {'大': True, '中': False, '小': False}
     fsAirlines = {'中国国航','厦门航空','海南航空','东方航空','南方航空','四川航空','深圳航空','吉祥航空','山东航空',}
@@ -16,10 +16,11 @@ def main():
                 '温州': 0.2, '珠海': 0.2, '合肥': 0.2, '石家庄': 0.15, '银川': 0.15, 
                 '烟台': 0.15, '桂林': 0.1, '泉州': 0.1, '无锡': 0.1, '揭阳': 0.1, 
                 '西宁': 0.1, '丽江': 0.1, '西双版纳': 0.1, '南阳': 0.1,}
-    path = '2022-01-21'
+    
     collDate = path.split('-', 2)
     collDate = datetime.date(int(collDate[0]), int(collDate[1]), int(collDate[2])).toordinal()
-    for file in pathlib.Path(path).iterdir():
+    path = Path(path)
+    for file in path.iterdir():
     #if True:   #for debugging
     
         # 原表格格式
@@ -143,10 +144,10 @@ def main():
         
         # 输出表格式
         # 日期   星期    航司     机型  出发机场  到达机场   出发时    折扣  竞争 航线类型
-        data.to_excel(path+"\\preproc_"+file.name, index = True, header = True, encoding = 'GBK')
+        data.to_excel(path / ("preproc_" + file.name), index = True, header = True, encoding = 'GBK')
 
 
 
 if __name__ == '__main__':
-    main()
+    main("2022-01-27")
     print('\nDone!')
