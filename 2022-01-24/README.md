@@ -4,4 +4,4 @@ New crawler and proxy pool added, now we have 211 routes!
 
 That's a lot of files, so they're ziped.
 
-** "orig" is the crawler's output, and "preproc" is preprocessed for *data analysis*.**
+**"orig" is the crawler's output, and "preproc" is preprocessed for *data analysis*.**
