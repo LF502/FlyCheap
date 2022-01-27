@@ -25,20 +25,21 @@ def main():
         # 原表格格式
         # 日期，星期，航司，机型，出发机场，到达机场，出发时间，到达时间，价格，折扣
         #  0     1    2     3      4        5        6        7      8     9
-        #if not file.match('*.xlsx'):
-        #    continue
+        if not file.match('*.xlsx') or '_' in file.name:
+            continue
+        print('\r'+file.name,end=' preprocessing...')
         data = pandas.read_excel(file).iloc[ : , [0, 1, 2, 3, 4, 5, 6, 9]]
 
         alterlist = []
         datelist = []
         airlinedict = dict()
         
-        '''dates, defined by how many days remain before the departure of flights (int, collect date - dep date)'''
+        '''current dates, defined by how many days remain before the departure of flights (int, collect date - dep date)'''
         for item in data.get('日期'):
             currdate = item.toordinal()
             alterlist.append(currdate - collDate)
             if currdate not in airlinedict:
-                airlinedict[currdate] = set()   #initialize for usage of detecting competition between airlines
+                airlinedict[currdate] = set()   #initialize airline set of currdate for detecting competition between airlines
             datelist.append(currdate)
         data.loc[:, '日期'] = alterlist
 
@@ -104,36 +105,29 @@ def main():
         for item in data.get('出发时'):
             alterlist.append(item.hour + round(item.minute/60, 2))
         data.loc[:, '出发时'] = alterlist
-        alterlist.sort()
-        data = data.sort_values('出发时')
+        alterlist.sort()    #sort dep time list in ascending order
+        data = data.sort_values('出发时')   #sort data by dep time too, so the alterlist and data are coordinated
         
         rtdict = {'小时段': '均率'}
-        for i in range(25):
-            rtdict[i]=[]
-        i = total = curr = sum =0
-        j = 1
+        for i in range(24):
+            rtdict[i] = 0    #initialize all keys (hour) of the time-rate dict to 0
+        i = total = sum =0
+        fcount = 1
+        curr = int(alterlist[0])
         for item in data.get('折扣'):
-            sum+= item
+            sum+= item  #sum every rate for avg
             dtime = int(alterlist[i]) #dep time in int
             diff = dtime - curr #time difference
-            if diff == 1:   #the next hour
-                rtdict[curr] = total/j    #avg rate of current time added
-                curr+= 1    #current time in dict +1
-                j = total = 0   #flights counted and flight rates counted
-            elif diff >=1:  #few hours later, so the blanks before should be filled with 0
-                for k in range(diff):
-                    rtdict[curr] = 0
-                    curr+= 1
+            if diff:    #more than one hour passed
+                rtdict[curr] = total/fcount #avg rate of current time added
+                curr+= diff
+                fcount = total = 0  #flights counted and flight rates sumed
             total+= item    #rate added
-            j+= 1   #flight +1
+            fcount+= 1  #flight +1
             i+= 1   #dep time list item and rate sumed +1
         else:
-            rtdict[curr] = total/j
-            if curr < 24:   #no more flights later but blanks should be filled with 0
-                for j in range(24-curr):
-                    curr+= 1
-                    rtdict[curr] = 0
-            sum/= i
+            rtdict[curr] = total/fcount
+            sum/= i #rate avg
         #time-rate.py combined
         
         '''dep time is defined by the percentage of avg rate'''
@@ -155,3 +149,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    print('\nDone!')
