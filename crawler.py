@@ -5,6 +5,7 @@ from json import dumps, loads
 from re import match
 import openpyxl
 from openpyxl.styles import Font, Alignment
+from openpyxl.cell import Cell
 from pathlib import Path
 
 def exits():
@@ -14,7 +15,7 @@ def exits():
 def ignore(codeList: list, ignoreIn: set = None) -> set:
     '''If two cities given are too close or not in analysis range, skip, 
     by key-ing the coordinates and value-ing False of the coordinate in set. '''
-    ignoreSet={('BJS','TSN'),('BJS','SJW'),('BJS','TYN'),('BJS','TNA'),('BJS','SHE'),('BJS','HET'),
+    ignoreSet = {('BJS','TSN'),('BJS','SJW'),('BJS','TYN'),('BJS','TNA'),('BJS','SHE'),('BJS','HET'),
                 ('SJW','TYN'),('SJW','TNA'),('TSN','TNA'),('TSN','TYN'),('TYN','TNA'),('SJW','TSN'),
                 ('SHE','CGQ'),('CGQ','HRB'),('SHE','HRB'),('DLC','SHE'),('DLC','CGQ'),('TSN','DLC'),
                 ('BJS','SHE'),('BJS','CGO'),('TNA','CGO'),('BJS','TAO'),('TNA','TAO'),('TSN','TAO'),
@@ -63,18 +64,18 @@ def ignore(codeList: list, ignoreIn: set = None) -> set:
                 ('WUX','SYX'),('HGH','ZHA'),('HLD','JJN'),('CZX','HAK'),('HRB','URC'),('CZX','URC'),
                 ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),('TSN','LXA'),('SHA','KMG'),
                 ('NKG','JHG'),('CTU','SWA'),('FOC','SYX'),('FOC','SZX'),('SHA','LXA'),}
-    codesum=len(codeList)
-    skipSet=set()
+    codesum = len(codeList)
+    skipSet = set()
     if ignoreIn is not None:
-        ignoreSet=ignoreSet.union(ignoreIn, ignoreSet)
+        ignoreSet = ignoreSet.union(ignoreIn, ignoreSet)
     for i in range(codesum):
-        for j in range(i,codesum):
-            if i==j:
+        for j in range(i, codesum):
+            if i == j:
                 continue
-            if (codeList[i],codeList[j]) in ignoreSet or (codeList[j],codeList[i]) in ignoreSet:
+            if (codeList[i], codeList[j]) in ignoreSet or (codeList[j], codeList[i]) in ignoreSet:
                 # If the city tuple is found in the set, it shouldn't be processed.
-                skipSet.add((i,j))
-                skipSet.add((j,i))
+                skipSet.add((i, j))
+                skipSet.add((j, i))
     #print(skipSet)
     return skipSet
 
@@ -84,12 +85,12 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
     try:
         dcityname = airportCity.get(dcity, None)
         acityname = airportCity.get(acity, None)
-        dow=dayOfWeek[fdate.isoweekday()]
+        dow = dayOfWeek[fdate.isoweekday()]
         datarows = []
         url = "https://flights.ctrip.com/itinerary/api/12808/products"
         header = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
-            "Referer": "https://flights.ctrip.com/itinerary/oneway/"+acity+'-'+dcity+"?date="+corrDate,
+            "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity + "?date=" + corrDate,
             "Content-Type": "application/json"}
         request_payload = {
             "flightWay": "Oneway",
@@ -103,7 +104,7 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
         try:
             with get('http://127.0.0.1:5555/random') as proxy:
                 proxy = proxy.text.strip()
-                proxy = {"http":"http://"+proxy}  # Set proxy: run in Docker / cmd -> cd ProxyPool -> docker-compose up -> (idle)
+                proxy = {"http": "http://" + proxy}  # Set proxy: run in Docker / cmd -> cd ProxyPool -> docker-compose up -> (idle)
         except:
             from random import random
             proxy = None    #sleep time activates for no proxy running
@@ -135,11 +136,11 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
                     continue    # Shared flights not collected
                 airlineName = flight.get('airlineName')
                 if '旗下' in airlineName:   # Airline name should be as simple as possible
-                    airlineName = airlineName.split('旗下',1)[1]
-                departureTime = flight.get('departureDate').split(' ',1)[1].split(':',2)
-                departureTime = datetime.time(int(departureTime[0]),int(departureTime[1]))   # Convert the time string to a time class
-                arrivalTime = flight.get('arrivalDate').split(' ',1)[1].split(':',2)
-                arrivalTime = datetime.time(int(arrivalTime[0]),int(arrivalTime[1])) # Convert the time string to a time class
+                    airlineName = airlineName.split('旗下', 1)[1]
+                departureTime = flight.get('departureDate').split(' ', 1)[1].split(':', 2)
+                departureTime = datetime.time(int(departureTime[0]), int(departureTime[1]))   # Convert the time string to a time class
+                arrivalTime = flight.get('arrivalDate').split(' ', 1)[1].split(':', 2)
+                arrivalTime = datetime.time(int(arrivalTime[0]), int(arrivalTime[1])) # Convert the time string to a time class
                 if dcityname == '北京' or dcityname == '上海' or dcityname== '成都':
                     departureName = flight.get('departureAirportInfo').get('airportName')
                     departureName = dcityname + match('成?都?(.*?)国?际?机场', departureName).groups()[0]
@@ -172,9 +173,9 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
     '''Generate excels of flight tickets info, between the citys given and from the date given and days needed. 
     Return tuple of file generated in int and new ignorance city tuples in set.'''
 
-    global dayOfWeek, airportCity, total
-    dayOfWeek={1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六',7:'星期日'}
-    airportCity={
+    global dayOfWeek, airportCity
+    dayOfWeek = {1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六',7:'星期日'}
+    airportCity = {
         'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TFU':'成都','SZX':'深圳','KMG':'昆明','XIY':'西安','PEK':'北京',
         'PKX':'北京','PVG':'上海','CKG':'重庆','HGH':'杭州','NKG':'南京','CGO':'郑州','XMN':'厦门','WUH':'武汉','CSX':'长沙',
         'TAO':'青岛','HAK':'海口','URC':'乌鲁木齐','TSN':'天津','KWE':'贵阳','HRB':'哈尔滨','SHE':'沈阳','SYX':'三亚','DLC':'大连',
@@ -196,7 +197,7 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
         exits()
     skipSet = ignore(codeList, ignoreIn)  # The set values are the coordinates that should not be processed.
     idct = avgTime = filesum = 0
-    total = (codesum*(codesum-1)*days-(days*len(skipSet)))/2
+    total = (codesum * (codesum - 1) * days - (days * len(skipSet))) / 2
     if total == 0 or codesum <= 1:
         exits()
     ignoreNew = set()
@@ -214,11 +215,11 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
                     print('\r{}% >> '.format(int(idct/total*100)),end='') #progress indicator
                     if avgTime:
                         m, s = divmod(int((total-idct)*avgTime), 60)
-                        h, m = divmod(m, 60)    #show est. remaining process time
+                        h, m = divmod(m, 60)    #show est. remaining process time: eta
                         print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
                     else:
                         print('eta waiting.. >> ',end='')
-                    print(codeList[dcity]+'-'+codeList[acity]+': '+cdate.isoformat(), end='')   #current processing flights
+                    print(codeList[dcity] + '-'+codeList[acity] + ': ' + cdate.isoformat(), end='')   #current processing flights
                     currTime = time.time()
 
                     '''Get OUTbound flights data, 3 attempts for ample data'''
@@ -264,21 +265,21 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
                 wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
                 wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
                 wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
-                for row in datarows:
-                    wsheet.append(row)
                 for row in wsheet.iter_rows(1, 1, 1, 10):
                     for cell in row:
                         cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
                         cell.font = Font(bold = True)
-                for row in wsheet.iter_rows(2, wsheet.max_row, 7, 8):  # Adjust the dep time and arr time formats
-                    for cell in row:
-                        cell.number_format = 'HH:MM'
-                for row in wsheet.iter_rows(2, wsheet.max_row, 10, 10):    # Make the rate show as percentage
-                    for cell in row:
-                        cell.number_format = '0%'
-                for row in wsheet.iter_rows(2, wsheet.max_row, 4, 8):  # Alignment adjusts
-                    for cell in row:
-                        cell.alignment = Alignment(vertical='center',horizontal='center')
+                
+                for data in datarows:
+                    row = []
+                    for item in data:   # Put value and adjust alignment
+                        row.append(Cell(worksheet = wsheet, value = item))
+                    for i in range(2, 8):
+                        row[i].alignment = Alignment(vertical='center',horizontal='center')
+                    row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
+                    row[9].number_format = '0%' # Make the rate show as percentage
+                    wsheet.append(row)
+                
                 wbook.save(Path(corrDate) / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
                 wbook.close
                 filesum += 1

@@ -28,7 +28,7 @@ def main(path: str):
         #  0     1    2     3      4        5        6        7      8     9
         if not file.match('*.xlsx') or '_' in file.name:
             continue
-        print('\r'+file.name,end=' preprocessing...')
+        print('\r' + file.name, end=' preprocessing...')
         data = pandas.read_excel(file).iloc[ : , [0, 1, 2, 3, 4, 5, 6, 9]]
 
         alterlist = []
@@ -60,7 +60,7 @@ def main(path: str):
                 alterlist.append(False)
             if item not in airlinedict[datelist[i]]:
                 airlinedict[datelist[i]].add(item)  #detect the competition between airlines
-            i+= 1
+            i += 1
         data.loc[:, '航司'] = alterlist
 
         '''competition in dict, defined by how many airlines fly the route in the same day (int)'''
@@ -121,21 +121,21 @@ def main(path: str):
             diff = dtime - curr #time difference
             if diff:    #more than one hour passed
                 rtdict[curr] = total/fcount #avg rate of current time added
-                curr+= diff
+                curr += diff
                 fcount = total = 0  #flights counted and flight rates sumed
-            total+= item    #rate added
-            fcount+= 1  #flight +1
+            total += item    #rate added
+            fcount += 1  #flight +1
             i+= 1   #dep time list item and rate sumed +1
         else:
             rtdict[curr] = total/fcount
-            sum/= i #rate avg
+            sum /= i #rate avg
         #time-rate.py combined
         
         '''dep time is defined by the percentage of avg rate'''
         i = 0
         for item in alterlist:
             alterlist[i] = round(rtdict[int(item)]/sum, 2)
-            i+= 1
+            i += 1
         data.loc[:, '出发时'] = alterlist
             
         #print(data)
