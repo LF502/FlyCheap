@@ -2,4 +2,4 @@
 
 Reseted ignorance set to collect 217 routes and all ziped.
 
-** "orig" is the crawler's output, and "preproc" is preprocessed for *data analysis*.**
+**"orig" is the crawler's output, and "preproc" is preprocessed for *data analysis*.**
