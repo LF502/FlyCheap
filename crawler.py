@@ -8,11 +8,12 @@ from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
 from pathlib import Path
 
-def exits():
-    print(' No need to process!')
+def exits(code: int = 0) -> None:
+    errorCode = {1: 'empty or incorrect data', 2: 'city tuple error', 3:'day limit error', 4: 'no flight',}
+    print(' Exited for '+errorCode[code])
     import sys
     sys.exit()
-def ignore(codeList: list, ignoreIn: set = None, ignore_threshold: int = 3) -> set:
+def ignore(codeList: list, ignore_cities: set = None, ignore_threshold: int = 3) -> set:
     '''Default ignore threshold: 3. If two cities given are too close or not in analysis range, skip, 
     by key-ing the coordinates and value-ing False of the coordinate in set. '''
     if ignore_threshold == 0:
@@ -72,8 +73,8 @@ def ignore(codeList: list, ignoreIn: set = None, ignore_threshold: int = 3) -> s
     
     codesum = len(codeList)
     skipSet = set()
-    if ignoreIn is not None:
-        ignoreSet = ignoreSet.union(ignoreIn, ignoreSet)
+    if ignore_cities is not None:
+        ignoreSet = ignoreSet.union(ignore_cities, ignoreSet)
     for i in range(codesum):
         for j in range(i, codesum):
             if i == j:
@@ -94,19 +95,13 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
         dow = dayOfWeek[fdate.isoweekday()]
         datarows = []
         url = "https://flights.ctrip.com/itinerary/api/12808/products"
-        header = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
-            "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity,
-            "Content-Type": "application/json"}
-        request_payload = {
-            "flightWay": "Oneway",
-            "classType": "ALL",
-            "hasChild": False,
-            "hasBaby": False,
-            "searchIndex": 1,
-            "airportParams": [
-                {"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
-                 "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
+        header = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
+                  "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity,
+                  "Content-Type": "application/json"}
+        request_payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1,
+                           "airportParams": [{"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
+                                              "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
+
         try:
             with get('http://127.0.0.1:5555/random') as proxy:
                 proxy = proxy.text.strip()
@@ -175,12 +170,12 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
     return datarows
 
 
-def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: list = ['BJS','CAN'], 
-                 ignoreIn: set = None, ignore_threshold: int = 3, values_only: bool = False, preproc: bool = False) -> set:
+def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: int = 0, codeList: list = ['BJS','CAN'], 
+                 ignore_cities: set = None, ignore_threshold: int = 3, values_only: bool = False, preproc: bool = False) -> int:
     '''Generate excels of flight tickets info, between the citys given and from the date given and days needed. 
-    Return new ignorance city tuples in set. (the sum of file generated in int is global)'''
+    Return the sum of file generated in int, output new ignorance city tuples in set.'''
 
-    global dayOfWeek, airportCity, filesum
+    global dayOfWeek, airportCity
     dayOfWeek = {1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六',7:'星期日'}
     airportCity = {
         'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TFU':'成都','SZX':'深圳','KMG':'昆明','XIY':'西安','PEK':'北京',
@@ -199,17 +194,36 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
     try:
         codesum = len(codeList)
     except:
-        exits() #exit for empty or incorrect data
+        exits(1) #exit for empty or incorrect data
     if codesum <= 1:
-        exits() #exit for no city tuple
-    skipSet = ignore(codeList, ignoreIn, ignore_threshold)  # The set values are the coordinates that should not be processed.
-    idct = 0
+        exits(2) #exit for no city tuple
+        
+    '''Day range preprocess'''
+    currDate = datetime.datetime.now().toordinal()
+    if currDate >= fdate.toordinal():   # If collect day is behind today, change the beginning date and days of collect.
+        days -= currDate - fdate.toordinal() + 1
+        fdate = fdate.fromordinal(currDate + 1)
+        if day_limit:   # If there's a limit for days in advance, change the days of collect.
+            if days > day_limit:
+                days = day_limit
+    else:
+        if day_limit:   # If there's a limit for days in advance, change the days of collect.
+            total = fdate.toordinal() + days - currDate
+            if total > day_limit:
+                days -= total - day_limit
+            if days < 0:
+                exits(3) #exit for day limit error
+    
+    '''Ignore cities with few flights'''
+    skipSet = ignore(codeList, ignore_cities, ignore_threshold)  # The set values are the coordinates that should not be processed.
+    idct = filesum = 0
     total = (codesum * (codesum - 1) * days - (days * len(skipSet))) / 2
     if total == 0 or codesum <= 1:
-        exits() #exit for ignored
+        exits(4) #exit for ignored
     ignoreNew = set()
     avgTime = 4.5
 
+    '''Get flights between d(ep)city and a(rr)city of days given'''
     print('\rGetting data...')
     for dcity in range(codesum):
         for acity in range(dcity,codesum):
@@ -220,7 +234,8 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                 datarows = []
                 for i in range(days):
 
-                    print('\r{}% >> '.format(int(idct / total * 100)), end='') #progress indicator
+                    '''Progress Indicator'''
+                    print('\r{}% >> '.format(int(idct / total * 100)), end='')
                     m, s = divmod(int((total - idct) * avgTime), 60)
                     h, m = divmod(m, 60)    #show est. remaining process time: eta
                     print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
@@ -238,7 +253,7 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                     else:
                         if i == 0 and len(datarows) < ignore_threshold:
                             total -= days # In the first round, ignore the cities whose flight data is less than 3.
-                            print('...ignored')
+                            print(' ...ignored')
                             ignoreNew.add((codeList[dcity], codeList[acity]))
                             break
 
@@ -253,7 +268,7 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                     else:
                         if i == 0 and len(datarows) - dataLen < ignore_threshold:
                             total -= days # In the first round, ignore the cities whose flight data is less than 3.
-                            print('...ignored')
+                            print(' ...ignored')
                             ignoreNew.add((codeList[dcity], codeList[acity]))
                             break
 
@@ -261,42 +276,49 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                     idct += 1
                     avgTime = (avgTime * (idct - 1) + time.time() - currTime) / idct
 
-                '''Generate (and format) the excel'''
-                wbook = openpyxl.Workbook()
-                wsheet = wbook.active
-                wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
-                
-                if values_only:
-                    for data in datarows:
-                        wsheet.append(data)
-                    print('\r{0}-{1} generated!                             '.format(codeList[dcity], codeList[acity]))
                 else:
-                    wsheet.column_dimensions['A'].width = 11
-                    wsheet.column_dimensions['B'].width = 7
-                    wsheet.column_dimensions['C'].width = 12
-                    wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
-                    wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
-                    for row in wsheet.iter_rows(1, 1, 1, 10):
-                        for cell in row:
-                            cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
-                            cell.font = Font(bold = True)
+                    '''Generate (and format) the excel if not ignored'''
+                    wbook = openpyxl.Workbook()
+                    wsheet = wbook.active
+                    wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
                     
-                    for data in datarows:
-                        row = []
-                        for item in data:   # Put value and adjust alignment
-                            row.append(Cell(worksheet = wsheet, value = item))
-                        for i in range(2, 8):
-                            row[i].alignment = Alignment(vertical='center',horizontal='center')
-                        row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
-                        row[9].number_format = '0%' # Make the rate show as percentage
-                        wsheet.append(row)
-                    print('\r{0}-{1} generated and formatted!               '.format(codeList[dcity], codeList[acity]))
-                
-                wbook.save(path / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
-                wbook.close
-                filesum += 1
-                
-    return ignoreNew
+                    if values_only:
+                        for data in datarows:
+                            wsheet.append(data)
+                        print('\r{0}-{1} generated!                             '.format(codeList[dcity], codeList[acity]))
+                    else:
+                        wsheet.column_dimensions['A'].width = 11
+                        wsheet.column_dimensions['B'].width = 7
+                        wsheet.column_dimensions['C'].width = 12
+                        wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
+                        wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
+                        for row in wsheet.iter_rows(1, 1, 1, 10):
+                            for cell in row:
+                                cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
+                                cell.font = Font(bold = True)
+                        
+                        for data in datarows:
+                            row = []
+                            for item in data:   # Put value
+                                row.append(Cell(worksheet = wsheet, value = item))
+                            for i in range(2, 8):
+                                row[i].alignment = Alignment(vertical='center',horizontal='center') # Adjust alignment
+                            row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
+                            row[9].number_format = '0%' # Make the rate show as percentage
+                            wsheet.append(row)
+                        print('\r{0}-{1} generated and formatted!               '.format(codeList[dcity], codeList[acity]))
+                    
+                    wbook.save(path / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
+                    wbook.close
+                    filesum += 1
+
+    # 若有更新忽略集，导出并手动更新（建议）
+    if len(ignoreNew) > 0:
+        with open('CityTuples_FlightsLessThan{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
+            updates.write(str(ignoreNew) + '\n')
+        print('Ignorance set updated, ', end = '')
+
+    return filesum
 
 if __name__ == "__main__":
 
@@ -323,21 +345,13 @@ if __name__ == "__main__":
     
     # 忽略阈值，低于该值则不统计航班，0为都爬取并统计
     ignore_threshold = 3
-    ignoreIn = None
+    ignore_cities = None
     
     # 航班爬取参数: 起始年月日、往后天数、机场三字码列表
     # 其他航班参数: 手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据
     # 数据处理参数: 是否录入无格式数据、是否预处理（该功能暂未合并）
-    # 返回更新的忽略集
-    ignoreNew = generateXlsx(path, datetime.date(2022,2,17), 30, cities, ignoreIn, ignore_threshold)
-    #ignoreNew = generateXlsx(path, datetime.date(2022,2,19), 3, ['NKG','CKG'], ignoreIn, ignore_threshold)    #测试用例
+    # 返回生成的文件数
+    #filesum = generateXlsx(path, datetime.date(2022,2,17), 30, 0, cities, ignore_cities, ignore_threshold)
+    filesum = generateXlsx(path, datetime.date(2022,2,19), 3, 0, ['NKG','CKG'], ignore_cities, ignore_threshold)    #测试用例
 
-    print(filesum, 'new files in ', end='') if filesum > 1 else print(filesum, 'new file in ', end='')
-
-    # 若有更新忽略集，导出并手动更新（建议）
-    if len(ignoreNew) > 0:
-        with open('IgnoreForLessThan{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
-            updates.write(str(ignoreNew) + '\n')
-        print(currDate + ', ignorance set updated.')
-    else:
-        print(currDate + '.')
+    print(filesum, 'new files in ', end = currDate) if filesum > 1 else print(filesum, 'new file in ', end = currDate)
