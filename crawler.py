@@ -67,7 +67,7 @@ def ignore(codeList: list, ignoreIn: set = None, ignore_threshold: int = 3) -> s
                     ('CGO','JHG'),('LHW','ZHA'),('DLC','WUX'),('CKG','ZHA'),('WUH','ZHA'),('HLD','CTU'),
                     ('CZX','XIY'),('WUX','JJN'),('HLD','CZX'),('CZX','SWA'),('JJN','SWA'),('URC','SYX'),
                     ('WUX','SYX'),('HGH','ZHA'),('HLD','JJN'),('CZX','HAK'),('HRB','URC'),('CZX','URC'),
-                    ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),}
+                    ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),('BJS','ZHA'),}
         ignoreSet = ignoreSet.union(ignoreExt)
     
     codesum = len(codeList)
