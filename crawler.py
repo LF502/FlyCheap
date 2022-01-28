@@ -12,58 +12,64 @@ def exits():
     print(' No need to process!')
     import sys
     sys.exit()
-def ignore(codeList: list, ignoreIn: set = None) -> set:
-    '''If two cities given are too close or not in analysis range, skip, 
+def ignore(codeList: list, ignoreIn: set = None, ignore_threshold: int = 3) -> set:
+    '''Default ignore threshold: 3. If two cities given are too close or not in analysis range, skip, 
     by key-ing the coordinates and value-ing False of the coordinate in set. '''
-    ignoreSet = {('BJS','TSN'),('BJS','SJW'),('BJS','TYN'),('BJS','TNA'),('BJS','SHE'),('BJS','HET'),
-                ('SJW','TYN'),('SJW','TNA'),('TSN','TNA'),('TSN','TYN'),('TYN','TNA'),('SJW','TSN'),
-                ('SHE','CGQ'),('CGQ','HRB'),('SHE','HRB'),('DLC','SHE'),('DLC','CGQ'),('TSN','DLC'),
-                ('BJS','SHE'),('BJS','CGO'),('TNA','CGO'),('BJS','TAO'),('TNA','TAO'),('TSN','TAO'),
-                ('CGO','SJW'),('CGO','XIY'),('CGO','HFE'),('CGO','TYN'),('CGO','WUH'),('CGO','NKG'),
-                ('XIY','INC'),('XIY','LHW'),('CTU','XIY'),('XIY','TYN'),('XIY','SJW'),('XIY','WUH'),
-                ('WUH','HFE'),('WUH','NKG'),('NKG','HFE'),('WUH','CSX'),('WUH','HGH'),('WUH','KHN'),
-                ('NKG','WUX'),('NKG','CZX'),('NKG','NTG'),('NKG','YTY'),('NKG','SHA'),('NKG','HGH'),
-                ('SHA','HGH'),('SHA','WUX'),('SHA','NTG'),('SHA','CZX'),('SHA','YTY'),('HGH','WUX'),
-                ('HGH','CZX'),('HGH','NTG'),('HGH','YTY'),('WUX','CZX'),('WUX','NTG'),('WUX','YTY'),
-                ('CZX','NTG'),('CZX','YTY'),('NTG','YTY'),('SHA','HFE'),('HGH','HFE'),('HFE','CZX'),
-                ('HFE','WUX'),('HFE','YTY'),('HFE','NTG'),('WUH','CZX'),('WUH','WUX'),('WUH','NTG'),
-                ('WUH','YTY'),('KHN','CSX'),('KHN','HGH'),('KHN','FOC'),('KHN','XMN'),('KHN','KWE'),
-                ('CSX','CAN'),('CSX','NNG'),('CSX','FOC'),('CSX','XMN'),('HGH','FOC'),('HGH','XMN'),
-                ('CAN','SZX'),('CAN','ZUH'),('ZUH','SZX'),('CAN','SWA'),('ZUH','SWA'),('SZX','SWA'),
-                ('SWA','FOC'),('SWA','XMN'),('CAN','NNG'),('FOC','NNG'),('KWE','NNG'),('KWE','KMG'),
-                ('KMG','NNG'),('KWE','CTU'),('KWE','CSX'),('CKG','KWE'),('CTU','CKG'),('CKG','XIY'),
-                ('LHW','XNN'),('XNN','INC'),('INC','LHW'),('HET','INC'),('HET','TYN'),('HET','SJW'),
-                ('JJN','XMN'),('JJN','FOC'),('JJN','ZHA'),('SZX','JJN'),('SWA','ZHA'),('FOC','ZHA'),
-                ('HAK','SYX'),('HRB','HLD'),('SZX','ZHA'),('LXA','ZHA'),('LXA','SZX'),('LXA','JJN'),
-                ('LXA','XMN'),('LXA','CZX'),('LXA','WUX'),('LXA','HLD'),('LXA','JHG'),('LXA','SWA'),
-                ('LXA','TAO'),('LXA','DLC'),('LXA','SYX'),('LXA','HAK'),('LXA','FOC'),('LXA','JJN'),
-                ('JHG','CZX'),('JHG','WUX'),('JHG','XMN'),('JHG','JJN'),('JHG','HRB'),('JHG','ZHA'),
-                ('JHG','SWA'),('JHG','SYX'),('JHG','HLD'),('JHG','URC'),('JHG','TAO'),('JHG','DLC'),
-                ('HLD','KMG'),('WUX','LHW'),('XMN','ZHA'),('WUH','JHG'),('TAO','JJN'),('TSN','ZHA'),
-                ('HRB','WUX'),('ZHA','HAK'),('XIY','SWA'),('CTU','ZHA'),('LHW','JJN'),('TAO','CZX'),
-                ('WUX','XMN'),('CZX','CGO'),('HLD','SHA'),('WUH','JJN'),('JHG','SZX'),('HLD','LHW'),
-                ('TSN','SWA'),('CGO','ZHA'),('CZX','SYX'),('TSN','NKG'),('LHW','SYX'),('HGH','SWA'),
-                ('HLD','DLC'),('URC','LXA'),('TSN','CGO'),('WUX','SWA'),('HLD','XMN'),('XMN','SYX'),
-                ('HLD','FOC'),('CGO','SWA'),('HLD','ZHA'),('HRB','JJN'),('DLC','ZHA'),('HLD','HGH'),
-                ('HLD','XIY'),('XIY','ZHA'),('WUX','HAK'),('CKG','JHG'),('HLD','SWA'),('HGH','LXA'),
-                ('HLD','WUH'),('HLD','NKG'),('DLC','SWA'),('JHG','LHW'),('URC','FOC'),('NKG','ZHA'),
-                ('HLD','CAN'),('TSN','CZX'),('SWA','HAK'),('CZX','JJN'),('URC','ZHA'),('ZHA','SYX'),
-                ('HLD','CGO'),('WUX','FOC'),('CKG','LHW'),('LXA','CAN'),('WUH','LHW'),('WUX','ZHA'),
-                ('TAO','FOC'),('HLD','HAK'),('CTU','JHG'),('CZX','CKG'),('TAO','ZHA'),('JJN','SYX'),
-                ('NKG','SWA'),('BJS','HLD'),('BJS','CZX'),('WUX','XIY'),('URC','SWA'),('NKG','LXA'),
-                ('BJS','JHG'),('JHG','XIY'),('FOC','XMN'),('XMN','SZX'),('TAO','SWA'),('CGO','LXA'),
-                ('TSN','SYX'),('HGH','JJN'),('HRB','LHW'),('CZX','KMG'),('HLD','URC'),('HLD','TAO'),
-                ('DLC','CZX'),('WUX','CGO'),('JHG','CAN'),('DLC','URC'),('TSN','WUX'),('LHW','SWA'),
-                ('URC','JJN'),('HRB','DLC'),('WUH','SWA'),('LHW','LXA'),('WUH','LXA'),('JHG','HAK'),
-                ('HRB','ZHA'),('SWA','SYX'),('CZX','LHW'),('TSN','JHG'),('LHW','HAK'),('KMG','ZHA'),
-                ('HLD','TSN'),('XIY','JJN'),('FOC','HAK'),('JHG','FOC'),('HLD','CKG'),('HLD','SYX'),
-                ('HLD','SZX'),('HRB','SWA'),('WUX','URC'),('DLC','SYX'),('CZX','XMN'),('CZX','FOC'),
-                ('HRB','LXA'),('TSN','JJN'),('TAO','URC'),('TSN','LHW'),('CZX','ZHA'),('HLD','WUX'),
-                ('CGO','JHG'),('LHW','ZHA'),('DLC','WUX'),('CKG','ZHA'),('WUH','ZHA'),('HLD','CTU'),
-                ('CZX','XIY'),('WUX','JJN'),('HLD','CZX'),('CZX','SWA'),('JJN','SWA'),('URC','SYX'),
-                ('WUX','SYX'),('HGH','ZHA'),('HLD','JJN'),('CZX','HAK'),('HRB','URC'),('CZX','URC'),
-                ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),('TSN','LXA'),('SHA','KMG'),
-                ('NKG','JHG'),('CTU','SWA'),('FOC','SYX'),('FOC','SZX'),('SHA','LXA'),}
+    if ignore_threshold == 0:
+        return set()
+    else:
+        ignoreSet = {('BJS','TSN'),('BJS','SJW'),('BJS','TYN'),('BJS','TNA'),('BJS','SHE'),('BJS','HET'),
+                    ('SJW','TYN'),('SJW','TNA'),('TSN','TNA'),('TSN','TYN'),('TYN','TNA'),('SJW','TSN'),
+                    ('SHE','CGQ'),('CGQ','HRB'),('SHE','HRB'),('DLC','SHE'),('DLC','CGQ'),('TSN','DLC'),
+                    ('BJS','SHE'),('BJS','CGO'),('TNA','CGO'),('BJS','TAO'),('TNA','TAO'),('TSN','TAO'),
+                    ('CGO','SJW'),('CGO','XIY'),('CGO','HFE'),('CGO','TYN'),('CGO','WUH'),('CGO','NKG'),
+                    ('XIY','INC'),('XIY','LHW'),('CTU','XIY'),('XIY','TYN'),('XIY','SJW'),('XIY','WUH'),
+                    ('WUH','HFE'),('WUH','NKG'),('NKG','HFE'),('WUH','CSX'),('WUH','HGH'),('WUH','KHN'),
+                    ('NKG','WUX'),('NKG','CZX'),('NKG','NTG'),('NKG','YTY'),('NKG','SHA'),('NKG','HGH'),
+                    ('SHA','HGH'),('SHA','WUX'),('SHA','NTG'),('SHA','CZX'),('SHA','YTY'),('HGH','WUX'),
+                    ('HGH','CZX'),('HGH','NTG'),('HGH','YTY'),('WUX','CZX'),('WUX','NTG'),('WUX','YTY'),
+                    ('CZX','NTG'),('CZX','YTY'),('NTG','YTY'),('SHA','HFE'),('HGH','HFE'),('HFE','CZX'),
+                    ('HFE','WUX'),('HFE','YTY'),('HFE','NTG'),('WUH','CZX'),('WUH','WUX'),('WUH','NTG'),
+                    ('WUH','YTY'),('KHN','CSX'),('KHN','HGH'),('KHN','FOC'),('KHN','XMN'),('KHN','KWE'),
+                    ('CSX','CAN'),('CSX','NNG'),('CSX','FOC'),('CSX','XMN'),('HGH','FOC'),('HGH','XMN'),
+                    ('CAN','SZX'),('CAN','ZUH'),('ZUH','SZX'),('CAN','SWA'),('ZUH','SWA'),('SZX','SWA'),
+                    ('SWA','FOC'),('SWA','XMN'),('CAN','NNG'),('FOC','NNG'),('KWE','NNG'),('KWE','KMG'),
+                    ('KMG','NNG'),('KWE','CTU'),('KWE','CSX'),('CKG','KWE'),('CTU','CKG'),('CKG','XIY'),
+                    ('LHW','XNN'),('XNN','INC'),('INC','LHW'),('HET','INC'),('HET','TYN'),('HET','SJW'),
+                    ('JJN','XMN'),('JJN','FOC'),('JJN','ZHA'),('SZX','JJN'),('SWA','ZHA'),('FOC','ZHA'),
+                    ('HAK','SYX'),('HRB','HLD'),('SZX','ZHA'),('FOC','SYX'),('FOC','SZX'),('FOC','XMN')}
+    if ignore_threshold >= 3:
+        ignoreExt = {('LXA','ZHA'),('LXA','SZX'),('LXA','JJN'),('CTU','SWA'),('SHA','LXA'),('TSN','LXA'),
+                    ('LXA','XMN'),('LXA','CZX'),('LXA','WUX'),('LXA','HLD'),('LXA','JHG'),('LXA','SWA'),
+                    ('LXA','TAO'),('LXA','DLC'),('LXA','SYX'),('LXA','HAK'),('LXA','FOC'),('LXA','JJN'),
+                    ('JHG','CZX'),('JHG','WUX'),('JHG','XMN'),('JHG','JJN'),('JHG','HRB'),('JHG','ZHA'),
+                    ('JHG','SWA'),('JHG','SYX'),('JHG','HLD'),('JHG','URC'),('JHG','TAO'),('JHG','DLC'),
+                    ('HLD','KMG'),('WUX','LHW'),('XMN','ZHA'),('WUH','JHG'),('TAO','JJN'),('TSN','ZHA'),
+                    ('HRB','WUX'),('ZHA','HAK'),('XIY','SWA'),('CTU','ZHA'),('LHW','JJN'),('TAO','CZX'),
+                    ('WUX','XMN'),('CZX','CGO'),('HLD','SHA'),('WUH','JJN'),('JHG','SZX'),('HLD','LHW'),
+                    ('TSN','SWA'),('CGO','ZHA'),('CZX','SYX'),('TSN','NKG'),('LHW','SYX'),('HGH','SWA'),
+                    ('HLD','DLC'),('URC','LXA'),('TSN','CGO'),('WUX','SWA'),('HLD','XMN'),('XMN','SYX'),
+                    ('HLD','FOC'),('CGO','SWA'),('HLD','ZHA'),('HRB','JJN'),('DLC','ZHA'),('HLD','HGH'),
+                    ('HLD','XIY'),('XIY','ZHA'),('WUX','HAK'),('CKG','JHG'),('HLD','SWA'),('HGH','LXA'),
+                    ('HLD','WUH'),('HLD','NKG'),('DLC','SWA'),('JHG','LHW'),('URC','FOC'),('NKG','ZHA'),
+                    ('HLD','CAN'),('TSN','CZX'),('SWA','HAK'),('CZX','JJN'),('URC','ZHA'),('ZHA','SYX'),
+                    ('HLD','CGO'),('WUX','FOC'),('CKG','LHW'),('LXA','CAN'),('WUH','LHW'),('WUX','ZHA'),
+                    ('TAO','FOC'),('HLD','HAK'),('CTU','JHG'),('CZX','CKG'),('TAO','ZHA'),('JJN','SYX'),
+                    ('NKG','SWA'),('BJS','HLD'),('BJS','CZX'),('WUX','XIY'),('URC','SWA'),('NKG','LXA'),
+                    ('BJS','JHG'),('JHG','XIY'),('NKG','JHG'),('XMN','SZX'),('TAO','SWA'),('CGO','LXA'),
+                    ('TSN','SYX'),('HGH','JJN'),('HRB','LHW'),('CZX','KMG'),('HLD','URC'),('HLD','TAO'),
+                    ('DLC','CZX'),('WUX','CGO'),('JHG','CAN'),('DLC','URC'),('TSN','WUX'),('LHW','SWA'),
+                    ('URC','JJN'),('HRB','DLC'),('WUH','SWA'),('LHW','LXA'),('WUH','LXA'),('JHG','HAK'),
+                    ('HRB','ZHA'),('SWA','SYX'),('CZX','LHW'),('TSN','JHG'),('LHW','HAK'),('KMG','ZHA'),
+                    ('HLD','TSN'),('XIY','JJN'),('FOC','HAK'),('JHG','FOC'),('HLD','CKG'),('HLD','SYX'),
+                    ('HLD','SZX'),('HRB','SWA'),('WUX','URC'),('DLC','SYX'),('CZX','XMN'),('CZX','FOC'),
+                    ('HRB','LXA'),('TSN','JJN'),('TAO','URC'),('TSN','LHW'),('CZX','ZHA'),('HLD','WUX'),
+                    ('CGO','JHG'),('LHW','ZHA'),('DLC','WUX'),('CKG','ZHA'),('WUH','ZHA'),('HLD','CTU'),
+                    ('CZX','XIY'),('WUX','JJN'),('HLD','CZX'),('CZX','SWA'),('JJN','SWA'),('URC','SYX'),
+                    ('WUX','SYX'),('HGH','ZHA'),('HLD','JJN'),('CZX','HAK'),('HRB','URC'),('CZX','URC'),
+                    ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),}
+        ignoreSet = ignoreSet.union(ignoreExt)
+    
     codesum = len(codeList)
     skipSet = set()
     if ignoreIn is not None:
@@ -170,7 +176,7 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
 
 
 def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: list = ['BJS','CAN'], 
-                 ignoreIn: set = None, values_only: bool = False, preproc: bool = False) -> set:
+                 ignoreIn: set = None, ignore_threshold: int = 3, values_only: bool = False, preproc: bool = False) -> set:
     '''Generate excels of flight tickets info, between the citys given and from the date given and days needed. 
     Return new ignorance city tuples in set. (the sum of file generated in int is global)'''
 
@@ -191,17 +197,18 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
         'WXN':'万州','TGO':'通辽','CGD':'常德','HNY':'衡阳','XIC':'西昌','MDG':'牡丹江','RIZ':'日照','NAO':'南充','YBP':'宜宾',}
 
     try:
-        codesum=len(codeList)
+        codesum = len(codeList)
     except:
-        exits()
+        exits() #exit for empty or incorrect data
     if codesum <= 1:
-        exits()
-    skipSet = ignore(codeList, ignoreIn)  # The set values are the coordinates that should not be processed.
-    idct = avgTime = 0
+        exits() #exit for no city tuple
+    skipSet = ignore(codeList, ignoreIn, ignore_threshold)  # The set values are the coordinates that should not be processed.
+    idct = 0
     total = (codesum * (codesum - 1) * days - (days * len(skipSet))) / 2
     if total == 0 or codesum <= 1:
-        exits()
+        exits() #exit for ignored
     ignoreNew = set()
+    avgTime = 4.5
 
     print('\rGetting data...')
     for dcity in range(codesum):
@@ -213,13 +220,10 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                 datarows = []
                 for i in range(days):
 
-                    print('\r{}% >> '.format(int(idct/total*100)),end='') #progress indicator
-                    if avgTime:
-                        m, s = divmod(int((total-idct)*avgTime), 60)
-                        h, m = divmod(m, 60)    #show est. remaining process time: eta
-                        print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
-                    else:
-                        print('eta waiting.. >> ',end='')
+                    print('\r{}% >> '.format(int(idct / total * 100)), end='') #progress indicator
+                    m, s = divmod(int((total - idct) * avgTime), 60)
+                    h, m = divmod(m, 60)    #show est. remaining process time: eta
+                    print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
                     print(codeList[dcity] + '-'+codeList[acity] + ': ' + cdate.isoformat(), end='')   #current processing flights
                     currTime = time.time()
 
@@ -227,12 +231,12 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                     for j in range(3):
                         dataLen = len(datarows)
                         datarows.extend(getTickets(cdate, codeList[dcity], codeList[acity]))
-                        if len(datarows) - dataLen >= 3:
+                        if len(datarows) - dataLen >= ignore_threshold:
                             break
                         elif i != 0 and len(datarows) - dataLen > 0:
                             break
                     else:
-                        if i == 0 and len(datarows) < 3:
+                        if i == 0 and len(datarows) < ignore_threshold:
                             total -= days # In the first round, ignore the cities whose flight data is less than 3.
                             print('...ignored')
                             ignoreNew.add((codeList[dcity], codeList[acity]))
@@ -242,12 +246,12 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
                     for j in range(3):
                         dataLen = len(datarows)
                         datarows.extend(getTickets(cdate, codeList[acity], codeList[dcity]))
-                        if len(datarows) - dataLen >= 3:
+                        if len(datarows) - dataLen >= ignore_threshold:
                             break
                         elif i != 0 and len(datarows) - dataLen > 0:
                             break
                     else:
-                        if i == 0 and len(datarows) - dataLen < 3:
+                        if i == 0 and len(datarows) - dataLen < ignore_threshold:
                             total -= days # In the first round, ignore the cities whose flight data is less than 3.
                             print('...ignored')
                             ignoreNew.add((codeList[dcity], codeList[acity]))
@@ -296,34 +300,43 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: lis
 
 if __name__ == "__main__":
 
-    #务必先设置代理: Docker Desktop / win+R -> cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
+    # 务必先设置代理: Docker Desktop / win+R -> cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
-    #初始化
+    # 初始化
     global filesum
+    filesum = 0
     print('Initializing...', end='')
+    
+    # 文件夹名设置为当前日期
     currDate = str(datetime.datetime.now().date())
     #currDate = 'debugging' #测试用例
-    filesum = 0
     path = Path(currDate)
     if not path.exists():
         Path.mkdir(path)
 
-    #城市列表，处理表中各城市对的航班（第一天少于3个则忽略），分类有: 华北+东北、华东、西南、西北+新疆、中南
+    # 城市列表，处理表中各城市对的航班（第一天少于3个则忽略），分类有: 华北+东北、华东、西南、西北+新疆、中南
     cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
               'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
               'CTU','CKG','KMG','JHG',
               'URC','XIY','LHW','LXA',
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     
-    #调参得表: 起始年月日、往后天数、机场三字码列表；返回更新的忽略集
-    ignoreNew = generateXlsx(path, datetime.date(2022,2,17), 30, cities)
-    #ignoreNew = generateXlsx(path, datetime.date(2022,2,19), 3, ['NKG','CKG'])    #测试用例
+    # 忽略阈值，低于该值则不统计航班，0为都爬取并统计
+    ignore_threshold = 3
+    ignoreIn = None
+    
+    # 航班爬取参数: 起始年月日、往后天数、机场三字码列表
+    # 其他航班参数: 手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据
+    # 数据处理参数: 是否录入无格式数据、是否预处理（该功能暂未合并）
+    # 返回更新的忽略集
+    ignoreNew = generateXlsx(path, datetime.date(2022,2,17), 30, cities, ignoreIn, ignore_threshold)
+    #ignoreNew = generateXlsx(path, datetime.date(2022,2,19), 3, ['NKG','CKG'], ignoreIn, ignore_threshold)    #测试用例
 
-    print(filesum, 'new files in', end='') if filesum > 1 else print(filesum, 'new file in', end='')
+    print(filesum, 'new files in ', end='') if filesum > 1 else print(filesum, 'new file in ', end='')
 
-    #若有更新忽略集，导出并手动更新（建议）
+    # 若有更新忽略集，导出并手动更新（建议）
     if len(ignoreNew) > 0:
-        with open('IgnoreSet.txt', 'a', encoding = 'UTF-8') as updates:
+        with open('IgnoreForLessThan{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
             updates.write(str(ignoreNew) + '\n')
         print(currDate + ', ignorance set updated.')
     else:
