@@ -72,8 +72,8 @@ def ignore(codeList: list, ignoreIn: set = None) -> set:
         for j in range(i, codesum):
             if i == j:
                 continue
-            if (codeList[i], codeList[j]) in ignoreSet or (codeList[j], codeList[i]) in ignoreSet:
-                # If the city tuple is found in the set, it shouldn't be processed.
+            if (codeList[i], codeList[j]) in ignoreSet or (codeList[j], codeList[i]) in ignoreSet or codeList[i] == codeList[j]:
+                # If the city tuple is the same or found in the set, it shouldn't be processed.
                 skipSet.add((i, j))
                 skipSet.add((j, i))
     #print(skipSet)
@@ -90,7 +90,7 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
         url = "https://flights.ctrip.com/itinerary/api/12808/products"
         header = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
-            "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity + "?date=" + corrDate,
+            "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity,
             "Content-Type": "application/json"}
         request_payload = {
             "flightWay": "Oneway",
@@ -169,11 +169,12 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
     return datarows
 
 
-def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','CAN'], ignoreIn: set = None) -> tuple:
+def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, codeList: list = ['BJS','CAN'], 
+                 ignoreIn: set = None, values_only: bool = False, preproc: bool = False) -> set:
     '''Generate excels of flight tickets info, between the citys given and from the date given and days needed. 
-    Return tuple of file generated in int and new ignorance city tuples in set.'''
+    Return new ignorance city tuples in set. (the sum of file generated in int is global)'''
 
-    global dayOfWeek, airportCity
+    global dayOfWeek, airportCity, filesum
     dayOfWeek = {1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六',7:'星期日'}
     airportCity = {
         'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TFU':'成都','SZX':'深圳','KMG':'昆明','XIY':'西安','PEK':'北京',
@@ -196,7 +197,7 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
     if codesum <= 1:
         exits()
     skipSet = ignore(codeList, ignoreIn)  # The set values are the coordinates that should not be processed.
-    idct = avgTime = filesum = 0
+    idct = avgTime = 0
     total = (codesum * (codesum - 1) * days - (days * len(skipSet))) / 2
     if total == 0 or codesum <= 1:
         exits()
@@ -241,7 +242,7 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
                     for j in range(3):
                         dataLen = len(datarows)
                         datarows.extend(getTickets(cdate, codeList[acity], codeList[dcity]))
-                        if len(datarows)-dataLen >= 3:
+                        if len(datarows) - dataLen >= 3:
                             break
                         elif i != 0 and len(datarows) - dataLen > 0:
                             break
@@ -256,46 +257,54 @@ def generateXlsx(fdate: datetime.date, days: int = 30, codeList: list = ['BJS','
                     idct += 1
                     avgTime = (avgTime * (idct - 1) + time.time() - currTime) / idct
 
-                '''Format the excel'''
+                '''Generate (and format) the excel'''
                 wbook = openpyxl.Workbook()
                 wsheet = wbook.active
-                wsheet.column_dimensions['A'].width = 11
-                wsheet.column_dimensions['B'].width = 7
-                wsheet.column_dimensions['C'].width = 12
-                wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
-                wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
                 wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
-                for row in wsheet.iter_rows(1, 1, 1, 10):
-                    for cell in row:
-                        cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
-                        cell.font = Font(bold = True)
                 
-                for data in datarows:
-                    row = []
-                    for item in data:   # Put value and adjust alignment
-                        row.append(Cell(worksheet = wsheet, value = item))
-                    for i in range(2, 8):
-                        row[i].alignment = Alignment(vertical='center',horizontal='center')
-                    row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
-                    row[9].number_format = '0%' # Make the rate show as percentage
-                    wsheet.append(row)
+                if values_only:
+                    for data in datarows:
+                        wsheet.append(data)
+                    print('\r{0}-{1} generated!                             '.format(codeList[dcity], codeList[acity]))
+                else:
+                    wsheet.column_dimensions['A'].width = 11
+                    wsheet.column_dimensions['B'].width = 7
+                    wsheet.column_dimensions['C'].width = 12
+                    wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
+                    wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
+                    for row in wsheet.iter_rows(1, 1, 1, 10):
+                        for cell in row:
+                            cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
+                            cell.font = Font(bold = True)
+                    
+                    for data in datarows:
+                        row = []
+                        for item in data:   # Put value and adjust alignment
+                            row.append(Cell(worksheet = wsheet, value = item))
+                        for i in range(2, 8):
+                            row[i].alignment = Alignment(vertical='center',horizontal='center')
+                        row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
+                        row[9].number_format = '0%' # Make the rate show as percentage
+                        wsheet.append(row)
+                    print('\r{0}-{1} generated and formatted!               '.format(codeList[dcity], codeList[acity]))
                 
-                wbook.save(Path(corrDate) / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
+                wbook.save(path / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
                 wbook.close
                 filesum += 1
-                print('\r{0}-{1} generated and formatted!               '.format(codeList[dcity], codeList[acity]))
-    return (filesum, ignoreNew)
+                
+    return ignoreNew
 
 if __name__ == "__main__":
 
     #务必先设置代理: Docker Desktop / win+R -> cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
     #初始化
-    print('Initializing...',end='')
-    global corrDate
-    corrDate = str(datetime.datetime.now().date())
-    #corrDate = 'debugging' #测试用例
-    path = Path(corrDate)
+    global filesum
+    print('Initializing...', end='')
+    currDate = str(datetime.datetime.now().date())
+    #currDate = 'debugging' #测试用例
+    filesum = 0
+    path = Path(currDate)
     if not path.exists():
         Path.mkdir(path)
 
@@ -307,15 +316,15 @@ if __name__ == "__main__":
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     
     #调参得表: 起始年月日、往后天数、机场三字码列表；返回更新的忽略集
-    file = generateXlsx(datetime.date(2022,2,17),30,cities)
-    #file = generateXlsx(datetime.date(2022,2,27),3,['HGH','CKG'])    #测试用例
+    ignoreNew = generateXlsx(path, datetime.date(2022,2,17), 30, cities)
+    #ignoreNew = generateXlsx(path, datetime.date(2022,2,19), 3, ['NKG','CKG'])    #测试用例
 
-    print('\n', file[0], 'files ', end='') if file[0] > 1 else print('\n', file[0], 'file ', end='')
+    print(filesum, 'new files in', end='') if filesum > 1 else print(filesum, 'new file in', end='')
 
     #若有更新忽略集，导出并手动更新（建议）
-    if file[1] is not None:
+    if len(ignoreNew) > 0:
         with open('IgnoreSet.txt', 'a', encoding = 'UTF-8') as updates:
-            updates.write(str(file[1]) + '\n')
-        print('collected and formatted, ignorance set updated.')
+            updates.write(str(ignoreNew) + '\n')
+        print(currDate + ', ignorance set updated.')
     else:
-        print('collected and formatted.')
+        print(currDate + '.')
