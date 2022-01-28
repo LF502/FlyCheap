@@ -88,7 +88,7 @@ def ignore(codeList: list, ignore_cities: set = None, ignore_threshold: int = 3)
 
 
 def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
-    "Get tickets from dep city to arr city on one date, put all data to the excel, and return a status code."
+    "Get tickets from dep city to arr city on one date, put all data to a data list and return."
     try:
         dcityname = airportCity.get(dcity, None)
         acityname = airportCity.get(acity, None)
@@ -98,7 +98,7 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
         header = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
                   "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity,
                   "Content-Type": "application/json"}
-        request_payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1,
+        payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1,
                            "airportParams": [{"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
                                               "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
 
@@ -111,7 +111,7 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
             proxy = None    #sleep time activates for no proxy running
             print('\tNo porxy warn', end='\t')
             time.sleep((round(3 * random(), 2)))
-        reply = post(url, data = dumps(request_payload), headers = header, proxies = proxy)   # -> json()
+        reply = post(url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
         response = reply.text
         #print(response)
         routeList = loads(response).get('data').get('routeList')   # -> list
