@@ -282,7 +282,7 @@ def generateXlsx(codeList: list, fdate: datetime.date, days: int = 1, day_limit:
     if total == 0 or codesum <= 1:
         exits(4) #exit for ignored
     ignoreNew = set()
-    avgTime = 4.5
+    avgTime = 3.5
 
     '''Get flights between d(ep)city and a(rr)city of days given'''
     print('\rGetting data...')
@@ -341,7 +341,7 @@ def generateXlsx(codeList: list, fdate: datetime.date, days: int = 1, day_limit:
 
                     cdate = cdate.fromordinal(cdate.toordinal() + 1)    #one day forward
                     idct += 1
-                    avgTime = (time.time() - currTime) + avgTime * (total - idct) / total
+                    avgTime = (time.time() - currTime + avgTime * (total - 1)) / total
 
                 else:
                     '''Generate (and format) the excel if not ignored'''
@@ -389,13 +389,13 @@ def generateXlsx(codeList: list, fdate: datetime.date, days: int = 1, day_limit:
 
 if __name__ == "__main__":
 
-    # 务必先设置代理: Docker Desktop / win+R -> cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
+    # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
-# 初始化
+    # 初始化
     print('Initializing...', end='')
     
     # 文件夹名设置为当前日期
-    #path = Path('debugging') #测试用例
+    #path = Path('debugging')   #测试用例
     path = Path(str(datetime.datetime.now().date()))
     if not path.exists():
         Path.mkdir(path)
