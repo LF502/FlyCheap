@@ -37,18 +37,19 @@ def getProxy() -> str:
         print('NO PROXY!',end='')
         return ''
     return "http://"+proxy  #should be str in aiohttp
-async def getWebpage(session:aiohttp.ClientSession, proxy:str, url: str, data: str, header: dict) -> list:
+async def getWebpage(proxy:str, url: str, data: str, header: dict) -> list:
     'Get the route list webpage returns, return empty list for error or none data.'
     routeList = list()
     if proxy == '':
         proxy = None
     for i in range(3):  # 3 retry attempt
         try:
-            async with session.post(url, data=data, headers=header, proxy=proxy) as reply:
-                response = await reply.text()
-                #print(response)
-                routeList = json.loads(response).get('data').get('routeList')   # -> list
-                #print(routeList)
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=64, ssl=False)) as session:
+                async with session.post(url, data=data, headers=header, proxy=proxy) as reply:
+                    response = await reply.text()
+                    print(response)
+                    routeList = json.loads(response).get('data').get('routeList')   # -> list
+                    #print(routeList)
         except:
             continue
         finally:
@@ -56,17 +57,17 @@ async def getWebpage(session:aiohttp.ClientSession, proxy:str, url: str, data: s
                 return list()
             else:
                 return routeList
-async def getTickets(session: aiohttp.ClientSession, proxy: str, fdate: date, dcity: str, acity: str) -> int:
+async def getTickets(proxy: str, fdate: date, dcity: str, acity: str) -> int:
     "Get tickets from dep city to arr city on one date, put all data to the excel, and return lists processed."
     global idct
     dcityname = airportCity.get(dcity, None)
     acityname = airportCity.get(acity, None)
     dow=dayOfWeek[fdate.isoweekday()]
     datarows = []
-    url = "https://flights.ctrip.com/itinerary/api/12808/products"
+    url = "http://flights.ctrip.com/itinerary/api/12808/products"
     header = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
-        "Referer": "https://flights.ctrip.com/itinerary/oneway/"+acity+'-'+dcity+"?date="+fdate.isoformat(),
+        "Referer": "http://flights.ctrip.com/itinerary/oneway/"+acity+'-'+dcity+"?date="+fdate.isoformat(),
         "Content-Type": "application/json"}
     payload = {
         "flightWay": "Oneway",
@@ -76,7 +77,7 @@ async def getTickets(session: aiohttp.ClientSession, proxy: str, fdate: date, dc
         "searchIndex": 1,
         "airportParams": [{"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
                            "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
-    routeList = await getWebpage(session, proxy, url, json.dumps(payload), header)
+    routeList = await getWebpage(proxy, url, json.dumps(payload), header)
     routeLen = len(routeList)
     if routeLen <= 2:
         idct+=0.5
@@ -163,14 +164,13 @@ async def generateXlsx(fdate: date, days: int, codeList: list, limit: int = 1):
                     tasks=[]
                     proxy = getProxy()
                     #connector=aiohttp.TCPConnector(limit=64, loop=loop, ssl=False)
-                    async with aiohttp.ClientSession() as session:
-                        for j in range(rounds,rounds+limit):
-                            if j >= days:
-                                break
-                            tasks.append(asyncio.create_task(getTickets(session, proxy, cdate, codeList[dcity], codeList[acity])))
-                            tasks.append(asyncio.create_task(getTickets(session, proxy, cdate, codeList[acity], codeList[dcity])))
-                        await asyncio.wait(tasks)
-                        cdate=cdate.fromordinal(cdate.toordinal()+1)
+                    for j in range(1):
+                        if j >= days:
+                            break
+                        tasks.append(asyncio.create_task(getTickets(getProxy(), cdate, codeList[dcity], codeList[acity])))
+                        tasks.append(asyncio.create_task(getTickets(getProxy(), cdate, codeList[acity], codeList[dcity])))
+                    await asyncio.wait(tasks)
+                    cdate=cdate.fromordinal(cdate.toordinal()+1)
                     # Progress Indicator
                     print('\r',end='')
                     for j in range(round(20*idct/total)):

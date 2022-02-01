@@ -7,15 +7,18 @@ import openpyxl
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
 from pathlib import Path
+from random import random
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
 def exits(code: int = 0) -> None:
-    errorCode = {1: 'empty or incorrect data', 2: 'city tuple error', 3:'day limit error', 4: 'no flight',}
-    print(' Exited for '+errorCode[code])
+    errorCode = {0: 'unknown error', 1: 'empty or incorrect data', 2: 'city tuple error', 3:'day limit error', 4: 'no flight',}
+    print(f' Exited for {errorCode[code]}')
     import sys
     sys.exit()
 def ignore(codeList: list, ignore_cities: set = None, ignore_threshold: int = 3) -> set:
     '''Default ignore threshold: 3. If two cities given are too close or not in analysis range, skip, 
-    by key-ing the coordinates and value-ing False of the coordinate in set. '''
+    by returning matrix coordinates in set. '''
     if ignore_threshold == 0:
         return set()
     else:
@@ -73,7 +76,7 @@ def ignore(codeList: list, ignore_cities: set = None, ignore_threshold: int = 3)
     
     codesum = len(codeList)
     skipSet = set()
-    if ignore_cities is not None:
+    if ignore_cities is not None and isinstance(ignore_cities, set):
         ignoreSet = ignoreSet.union(ignore_cities, ignoreSet)
     for i in range(codesum):
         for j in range(i, codesum):
@@ -95,42 +98,44 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
         dow = dayOfWeek[fdate.isoweekday()]
         datarows = []
         url = "https://flights.ctrip.com/itinerary/api/12808/products"
-        header = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0",
+        header = {"User-Agent": userAgents[int(len(userAgents) * random())],
                   "Referer": "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity,
-                  "Content-Type": "application/json"}
+                  "Content-Type": "application/json;charset=utf-8",
+                  "Accept": "application/json",
+                  "Accept-Language": "zh-cn",
+                  "Origin": "https://flights.ctrip.com",
+                  "Host": "flights.ctrip.com"}
         payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1,
-                           "airportParams": [{"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
-                                              "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
+                   "airportParams": [{"dcity": dcity, "acity": acity, "dcityname": dcityname, "acityname": acityname,
+                                      "date": fdate.isoformat(), "dcityid": 1, "acityid": 2}]}
 
         try:
             with get('http://127.0.0.1:5555/random') as proxy:
-                proxy = proxy.text.strip()
-                proxy = {"http": "http://" + proxy}  # Set proxy: run in Docker / cmd -> cd ProxyPool -> docker-compose up -> (idle)
+                proxy = {"http": "http://" + proxy.text.strip()}  # Set proxy: run in Docker / cmd -> cd ProxyPool -> docker-compose up -> (idle)
         except:
-            from random import random
             proxy = None    #sleep time activates for no proxy running
-            print('\tNo porxy warn', end='\t')
+            print('\tNo porxy warn', end='')
             time.sleep((round(3 * random(), 2)))
-        reply = post(url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
-        response = reply.text
-        #print(response)
-        routeList = loads(response).get('data').get('routeList')   # -> list
+        response = post(url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
+        routeList = loads(response.text).get('data').get('routeList')   # -> list
+        response.close
         #print(routeList)
     except:
         try:
-            reply.close
+            response.close
         finally:
             return list()
-    reply.close
     if routeList is None:   # No data, ignore these flights in the future.
         return list()
     elif len(routeList) == 0:
         return list()
 
+    d_multiairport = True if dcityname == '北京' or dcityname == '上海' or dcityname== '成都' else False
+    a_multiairport = True if acityname == '北京' or acityname == '上海' or acityname== '成都' else False
     try:
         for route in routeList:
-            if len(route.get('legs')) == 1: # Flights that need to transfer is ignored.
-                legs = route.get('legs')
+            legs = route.get('legs')
+            if len(legs) == 1: # Flights that need to transfer is ignored.
                 #print(legs,end='\n\n')
                 flight = legs[0].get('flight')
                 if flight.get('sharedFlightNumber'):
@@ -138,11 +143,9 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
                 airlineName = flight.get('airlineName')
                 if '旗下' in airlineName:   # Airline name should be as simple as possible
                     airlineName = airlineName.split('旗下', 1)[1]
-                departureTime = flight.get('departureDate').split(' ', 1)[1].split(':', 2)
-                departureTime = datetime.time(int(departureTime[0]), int(departureTime[1]))   # Convert the time string to a time class
-                arrivalTime = flight.get('arrivalDate').split(' ', 1)[1].split(':', 2)
-                arrivalTime = datetime.time(int(arrivalTime[0]), int(arrivalTime[1])) # Convert the time string to a time class
-                if dcityname == '北京' or dcityname == '上海' or dcityname== '成都':
+                departureTime = datetime.time().fromisoformat(flight.get('departureDate').split(' ', 1)[1])  # Convert the time string to a time class
+                arrivalTime = datetime.time().fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])  # Convert the time string to a time class
+                if d_multiairport:
                     departureName = flight.get('departureAirportInfo').get('airportName')
                     departureName = dcityname + match('成?都?(.*?)国?际?机场', departureName).groups()[0]
                 elif dcityname: # If dcityname exists, that means the code-name is in the default code-name dict
@@ -150,7 +153,7 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
                 else:   # If dcityname is None, that means the code-name is not in the default code-name dict
                     departureName = flight.get('departureAirportInfo').get('cityName')
                     airportCity[dcity] = departureName  # ...therefore it is added now 
-                if acityname == '北京' or acityname == '上海' or acityname== '成都':
+                if a_multiairport:
                     arrivalName = flight.get('arrivalAirportInfo').get('airportName')
                     arrivalName = acityname + match('成?都?(.*?)国?际?机场', arrivalName).groups()[0]
                 elif acityname:
@@ -170,13 +173,13 @@ def getTickets(fdate: datetime.date, dcity: str, acity: str) -> list():
     return datarows
 
 
-def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: int = 0, codeList: list = ['BJS','CAN'], 
+def generateXlsx(codeList: list, fdate: datetime.date, days: int = 1, day_limit: int = 0, path: Path = Path(), 
                  ignore_cities: set = None, ignore_threshold: int = 3, values_only: bool = False, preproc: bool = False) -> int:
     '''Generate excels of flight tickets info, between the citys given and from the date given and days needed. 
     Return the sum of file generated in int, output new ignorance city tuples in set.'''
 
-    global dayOfWeek, airportCity
-    dayOfWeek = {1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六',7:'星期日'}
+    global dayOfWeek, airportCity, userAgents
+    dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
     airportCity = {
         'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TFU':'成都','SZX':'深圳','KMG':'昆明','XIY':'西安','PEK':'北京',
         'PKX':'北京','PVG':'上海','CKG':'重庆','HGH':'杭州','NKG':'南京','CGO':'郑州','XMN':'厦门','WUH':'武汉','CSX':'长沙',
@@ -190,7 +193,65 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
         'AKU':'阿克苏','YNJ':'延吉','ZYI':'遵义','HTN':'和田','LZH':'柳州','LYA':'洛阳','WDS':'十堰','HSN':'舟山','JNG':'济宁',
         'YIN':'伊宁','ENH':'恩施','ACX':'兴义','HYN':'台州','TCZ':'腾冲','DAT':'大同','BSD':'保山','BFJ':'毕节','NNY':'南阳',
         'WXN':'万州','TGO':'通辽','CGD':'常德','HNY':'衡阳','XIC':'西昌','MDG':'牡丹江','RIZ':'日照','NAO':'南充','YBP':'宜宾',}
-
+    userAgents = (
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:96.0) Gecko/20100101 Firefox/96.0',
+        'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.7113.93 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0',
+        'Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.85 YaBrowser/21.11.4.727 Yowser/2.5 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 Edg/96.0.1054.62',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.43',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.50',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.58',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36 OPR/82.0.4227.33',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36 Edg/97.0.1072.55',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36 Edg/97.0.1072.62',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:97.0) Gecko/20100101 Firefox/97.0',
+        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (X11; CrOS x86_64 14268.67.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.111 Safari/537.36',
+        'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:94.0) Gecko/20100101 Firefox/94.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
+    
     try:
         codesum = len(codeList)
     except:
@@ -211,8 +272,8 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
             total = fdate.toordinal() + days - currDate
             if total > day_limit:
                 days -= total - day_limit
-            if days < 0:
-                exits(3) #exit for day limit error
+    if days <= 0:
+        exits(3) #exit for day limit error
     
     '''Ignore cities with few flights'''
     skipSet = ignore(codeList, ignore_cities, ignore_threshold)  # The set values are the coordinates that should not be processed.
@@ -227,10 +288,16 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
     print('\rGetting data...')
     for dcity in range(codesum):
         for acity in range(dcity,codesum):
-            if acity == dcity:  # Same values should not be processed.
-                continue
-            if (dcity,acity) not in skipSet: # If the city tuple key / coordinate is not found, process.
-                cdate=fdate #reset
+            if acity == dcity:
+                continue    # Same city tuple should not be processed.
+            dcityname = codeList[dcity]
+            acityname = codeList[acity]
+            if Path(path / f'{dcityname}~{acityname}.xlsx').exists():
+                print(f'{dcityname}-{acityname} already collected, skip')
+                total -= days
+                continue    # Already processed.
+            if (dcity, acity) not in skipSet: # If the city tuple key / coordinate is not found, process.
+                cdate = fdate #reset
                 datarows = []
                 for i in range(days):
 
@@ -239,13 +306,13 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
                     m, s = divmod(int((total - idct) * avgTime), 60)
                     h, m = divmod(m, 60)    #show est. remaining process time: eta
                     print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
-                    print(codeList[dcity] + '-'+codeList[acity] + ': ' + cdate.isoformat(), end='')   #current processing flights
+                    print(dcityname + '-' + acityname + ': ' + cdate.isoformat(), end='')   #current processing flights
                     currTime = time.time()
 
                     '''Get OUTbound flights data, 3 attempts for ample data'''
                     for j in range(3):
                         dataLen = len(datarows)
-                        datarows.extend(getTickets(cdate, codeList[dcity], codeList[acity]))
+                        datarows.extend(getTickets(cdate, dcityname, acityname))
                         if len(datarows) - dataLen >= ignore_threshold:
                             break
                         elif i != 0 and len(datarows) - dataLen > 0:
@@ -254,13 +321,13 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
                         if i == 0 and len(datarows) < ignore_threshold:
                             total -= days # In the first round, ignore the cities whose flight data is less than 3.
                             print(' ...ignored')
-                            ignoreNew.add((codeList[dcity], codeList[acity]))
+                            ignoreNew.add((dcityname, acityname))
                             break
 
                     '''Get INbound flights data, 3 attempts for ample data'''
                     for j in range(3):
                         dataLen = len(datarows)
-                        datarows.extend(getTickets(cdate, codeList[acity], codeList[dcity]))
+                        datarows.extend(getTickets(cdate, acityname, dcityname))
                         if len(datarows) - dataLen >= ignore_threshold:
                             break
                         elif i != 0 and len(datarows) - dataLen > 0:
@@ -269,12 +336,12 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
                         if i == 0 and len(datarows) - dataLen < ignore_threshold:
                             total -= days # In the first round, ignore the cities whose flight data is less than 3.
                             print(' ...ignored')
-                            ignoreNew.add((codeList[dcity], codeList[acity]))
+                            ignoreNew.add((dcityname, acityname))
                             break
 
                     cdate = cdate.fromordinal(cdate.toordinal() + 1)    #one day forward
                     idct += 1
-                    avgTime = (avgTime * (idct - 1) + time.time() - currTime) / idct
+                    avgTime = (time.time() - currTime) + avgTime * (total - idct) / total
 
                 else:
                     '''Generate (and format) the excel if not ignored'''
@@ -285,7 +352,7 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
                     if values_only:
                         for data in datarows:
                             wsheet.append(data)
-                        print('\r{0}-{1} generated!                             '.format(codeList[dcity], codeList[acity]))
+                        print(f'\r{dcityname}-{acityname} generated!                             ')
                     else:
                         wsheet.column_dimensions['A'].width = 11
                         wsheet.column_dimensions['B'].width = 7
@@ -306,9 +373,9 @@ def generateXlsx(path: Path, fdate: datetime.date, days: int = 10, day_limit: in
                             row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
                             row[9].number_format = '0%' # Make the rate show as percentage
                             wsheet.append(row)
-                        print('\r{0}-{1} generated and formatted!               '.format(codeList[dcity], codeList[acity]))
+                        print(f'\r{dcityname}-{acityname} generated and formatted!               ')
                     
-                    wbook.save(path / '{0}~{1}.xlsx'.format(codeList[dcity], codeList[acity]))
+                    wbook.save(path / f'{dcityname}~{acityname}.xlsx')
                     wbook.close
                     filesum += 1
 
@@ -324,15 +391,12 @@ if __name__ == "__main__":
 
     # 务必先设置代理: Docker Desktop / win+R -> cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
-    # 初始化
-    global filesum
-    filesum = 0
+# 初始化
     print('Initializing...', end='')
     
     # 文件夹名设置为当前日期
-    currDate = str(datetime.datetime.now().date())
-    #currDate = 'debugging' #测试用例
-    path = Path(currDate)
+    #path = Path('debugging') #测试用例
+    path = Path(str(datetime.datetime.now().date()))
     if not path.exists():
         Path.mkdir(path)
 
@@ -346,12 +410,11 @@ if __name__ == "__main__":
     # 忽略阈值，低于该值则不统计航班，0为都爬取并统计
     ignore_threshold = 3
     ignore_cities = None
-    
-    # 航班爬取参数: 起始年月日、往后天数、机场三字码列表
-    # 其他航班参数: 手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据
-    # 数据处理参数: 是否录入无格式数据、是否预处理（该功能暂未合并）
-    # 返回生成的文件数
-    #filesum = generateXlsx(path, datetime.date(2022,2,17), 30, 0, cities, ignore_cities, ignore_threshold)
-    filesum = generateXlsx(path, datetime.date(2022,2,19), 3, 0, ['NKG','CKG'], ignore_cities, ignore_threshold)    #测试用例
 
-    print(filesum, 'new files in ', end = currDate) if filesum > 1 else print(filesum, 'new file in ', end = currDate)
+    # 航班爬取: 机场三字码列表、起始年月日、往后天数
+    # 其他参数: 提前天数限制、存储路径、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否录入无格式数据
+    # 返回生成的文件数
+    filesum = generateXlsx(cities, datetime.date(2022,2,17), 30, 0, path, ignore_cities, ignore_threshold)
+    #filesum = generateXlsx(['NKG','CAN'], datetime.date(2022,2,22), 1, 0, path, ignore_cities, ignore_threshold)    #测试用例
+
+    print(filesum, 'new files in', path.name) if filesum > 1 else print(filesum, 'new file in', path.name)
