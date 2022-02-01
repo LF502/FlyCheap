@@ -1,5 +1,6 @@
 import datetime
 import time
+from typing import Generator
 from requests import get, post
 from json import dumps, loads
 from re import match
@@ -92,7 +93,7 @@ class CtripCrawler:
         'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
 
     def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, day_limit: int = 0, 
-                 path: Path = Path(), ignore_cities: set = None, ignore_threshold: int = 3, values_only: bool = False) -> None:
+                 ignore_cities: set = None, ignore_threshold: int = 3) -> None:
 
         try:
             self.__codesum = len(cityList)
@@ -113,7 +114,7 @@ class CtripCrawler:
             self.exits(4)   #exit for ignored
         
         self.__idct = 0
-        self.__avgTime = 4.5
+        self.__avgTime = 3.5
 
         self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
         self.header = {"Content-Type": "application/json;charset=utf-8",
@@ -125,9 +126,6 @@ class CtripCrawler:
         
         self.ignore_cities = ignore_cities
         self.ignore_threshold = ignore_threshold
-        
-        self.path = path
-        self.values_only = values_only
 
 
     def __sizeof__(self) -> int:
@@ -315,7 +313,7 @@ class CtripCrawler:
 
 
     def show_progress(self, dcity: str, acity: str, collectDate: datetime.date) -> float:
-        '''Progress indicator with a current time return'''
+        '''Progress indicator with a current time (float) return'''
         print('\r{}% >> '.format(int(self.__idct / self.__total * 100)), end='')
         m, s = divmod(int((self.__total - self.__idct) * self.__avgTime), 60)
         h, m = divmod(m, 60)    #show est. remaining process time: eta
@@ -324,7 +322,7 @@ class CtripCrawler:
         return time.time()
 
     @staticmethod
-    def output_excel(path: Path, datarows: list, dcity: str, acity: str, values_only: bool = False) -> bool:
+    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), values_only: bool = False) -> bool:
         wbook = openpyxl.Workbook()
         wsheet = wbook.active
         wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
@@ -367,22 +365,28 @@ class CtripCrawler:
             return False
 
 
-    def run(self):
-        '''Collect all data and output'''
+    def run(self, with_output: bool = True, **kwargs) -> Generator:
+        '''Collect all data, output and yield data of city tuple flights collected in list.'''
         print('\rGetting data...')
-        filesum = 0
         skipSet = self.skip
         self.days = self.day_range(skipSet)
+        filesum = 0
+        if with_output:
+            path: Path = kwargs.get('path', Path())
+            values_only: bool = kwargs.get('values_only', False)
+        else:
+            path = Path()
+
         for dcity in range(self.__codesum):
             for acity in range(dcity,self.__codesum):
                 if acity == dcity:
                     continue    # Same city tuple should not be processed.
-                if Path(self.path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
+                if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
                     print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
                     self.__total -= self.days
                     continue    # Already processed.
-                if (dcity, acity) not in skipSet: # If the city tuple key / coordinate is not found, process.
-                    collectDate = self.flightDate  #reset
+                if (dcity, acity) not in skipSet:   # If the city tuple key / coordinate is not found, process.
+                    collectDate = self.flightDate   #reset
                     datarows = []
                     ignoreNew = set()
                     for i in range(self.days):
@@ -422,27 +426,32 @@ class CtripCrawler:
 
                         collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)    #one day forward
                         self.__idct += 1
-                        self.__avgTime = (time.time() - currTime) + self.__avgTime * (self.__total - self.__idct) / self.__total
+                        self.__avgTime = (time.time() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
                     else:
-                        print(f'\r{dcityname}-{acityname} generated', end = '') 
-                        print('!                         ') if self.output_excel(self.path, datarows, dcityname, acityname) else print(' and formatted!           ')
-                        filesum += 1
+                        if with_output:
+                            print(f'\r{dcityname}-{acityname} generated', end = '') 
+                            print('!                         ') if self.output_excel(datarows, dcityname, acityname, path, values_only) else print(' and formatted!           ')
+                            filesum += 1
+                        else:
+                            print(f'\r{dcityname}-{acityname} collected!                         ') 
+                        yield datarows
 
-        if self.output_new_ignorance(ignoreNew):
-            print('Ignorance set updated, ', end = '')
-        print(filesum, 'new files in', self.path.name) if filesum > 1 else print(filesum, 'new file in', self.path.name)
-        return filesum
+        if with_output:
+            if self.output_new_ignorance(ignoreNew):
+                print('Ignorance set updated, ', end = '')
+            print(filesum, 'new files in', path.name) if filesum > 1 else print(filesum, 'new file in', path.name)
+
 
 if __name__ == "__main__":
 
-    # 务必先设置代理: Docker Desktop / win+R -> cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
+    # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
-# 初始化
+    # 初始化
     print('Initializing...', end='')
     
     # 文件夹名设置为当前日期
-    path = Path('debugging') #测试用例
-    #path = Path(str(datetime.datetime.now().date()))
+    #path = Path('debugging')   #测试用例
+    path = Path(str(datetime.datetime.now().date()))
     if not path.exists():
         Path.mkdir(path)
 
@@ -459,7 +468,10 @@ if __name__ == "__main__":
 
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、存储路径、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否录入无格式数据
-    #crawler = CtripCrawler(cityList = cities, flightDate = datetime.date(2022,2,17), days = 30, path = path, 
-    #             ignore_cities = ignore_cities, ignore_threshold = ignore_threshold)
-    crawler = CtripCrawler(['NKG','XIY'], datetime.date(2022,2,20), 5, 0, path, ignore_cities, ignore_threshold)
-    crawler.run()
+    crawler = CtripCrawler(cityList = cities, flightDate = datetime.date(2022,2,17), days = 30,
+                           ignore_cities = ignore_cities, ignore_threshold = ignore_threshold)
+    #crawler = CtripCrawler(['NKG','XIY','HGH'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold)
+    for data in crawler.run(path = path):
+        pass
+    else:
+        print(' - - - COMPLETE AND EXIT - - - ')
