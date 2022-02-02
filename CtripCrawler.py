@@ -93,7 +93,7 @@ class CtripCrawler:
         'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
 
     def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, day_limit: int = 0, 
-                 ignore_cities: set = None, ignore_threshold: int = 3) -> None:
+                 ignore_cities: set = None, ignore_threshold: int = 3, with_return: bool = True) -> None:
 
         try:
             self.__codesum = len(cityList)
@@ -104,17 +104,14 @@ class CtripCrawler:
 
         self.cityList = cityList
         self.flightDate = flightDate
-        
+
         self.days = days
         self.day_limit = day_limit
-        
+
         self.__total = self.__codesum * (self.__codesum - 1) * self.days
-        
+
         if self.__total == 0 or self.__codesum <= 1:
             self.exits(4)   #exit for ignored
-        
-        self.__idct = 0
-        self.__avgTime = 3.5
 
         self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
         self.header = {"Content-Type": "application/json;charset=utf-8",
@@ -123,9 +120,13 @@ class CtripCrawler:
                        "Origin": "https://flights.ctrip.com",
                        "Host": "flights.ctrip.com"}
         self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
-        
+
         self.ignore_cities = ignore_cities
         self.ignore_threshold = ignore_threshold
+        self.with_return = with_return
+
+        self.__idct = 0
+        self.__avgTime = 3.5 if with_return else 1.8
 
 
     def __sizeof__(self) -> int:
@@ -220,7 +221,6 @@ class CtripCrawler:
                 if (self.cityList[i], self.cityList[j]) in ignoreSet or (self.cityList[j], self.cityList[i]) in ignoreSet or self.cityList[i] == self.cityList[j]:
                     # If the city tuple is the same or found in the set, it shouldn't be processed.
                     skipSet.add((i, j))
-                    skipSet.add((j, i))
         return skipSet
 
     @staticmethod
@@ -322,7 +322,7 @@ class CtripCrawler:
         return time.time()
 
     @staticmethod
-    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), values_only: bool = False) -> bool:
+    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), values_only: bool = False, with_return: bool = True) -> bool:
         wbook = openpyxl.Workbook()
         wsheet = wbook.active
         wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
@@ -350,8 +350,11 @@ class CtripCrawler:
                 row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
                 row[9].number_format = '0%' # Make the rate show as percentage
                 wsheet.append(row)
-        
-        wbook.save(path / f'{dcity}~{acity}.xlsx')
+
+        if with_return:
+            wbook.save(path / f'{dcity}~{acity}.xlsx')
+        else:
+            wbook.save(path / f'{dcity}-{acity}.xlsx')
         wbook.close
         return values_only
 
@@ -410,19 +413,20 @@ class CtripCrawler:
                                 break
 
                         '''Get INbound flights data, 3 attempts for ample data'''
-                        for j in range(3):
-                            dataLen = len(datarows)
-                            datarows.extend(self.data(collectDate, acityname, dcityname))
-                            if len(datarows) - dataLen >= self.ignore_threshold:
-                                break
-                            elif i != 0 and len(datarows) - dataLen > 0:
-                                break
-                        else:
-                            if i == 0 and len(datarows) - dataLen < self.ignore_threshold:
-                                self.__total -= self.days # In the first round, ignore the cities whose flight data is less than 3.
-                                print(' ...ignored')
-                                ignoreNew.add((acityname, dcityname))
-                                break
+                        if self.with_return:
+                            for j in range(3):
+                                dataLen = len(datarows)
+                                datarows.extend(self.data(collectDate, acityname, dcityname))
+                                if len(datarows) - dataLen >= self.ignore_threshold:
+                                    break
+                                elif i != 0 and len(datarows) - dataLen > 0:
+                                    break
+                            else:
+                                if i == 0 and len(datarows) - dataLen < self.ignore_threshold:
+                                    self.__total -= self.days # In the first round, ignore the cities whose flight data is less than 3.
+                                    print(' ...ignored')
+                                    ignoreNew.add((acityname, dcityname))
+                                    break
 
                         collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)    #one day forward
                         self.__idct += 1
@@ -430,7 +434,7 @@ class CtripCrawler:
                     else:
                         if with_output:
                             print(f'\r{dcityname}-{acityname} generated', end = '') 
-                            print('!                         ') if self.output_excel(datarows, dcityname, acityname, path, values_only) else print(' and formatted!           ')
+                            print('!                         ') if self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return) else print(' and formatted!           ')
                             filesum += 1
                         else:
                             print(f'\r{dcityname}-{acityname} collected!                         ') 
@@ -467,10 +471,10 @@ if __name__ == "__main__":
     ignore_cities = None
 
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
-    # 其他参数: 提前天数限制、存储路径、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否录入无格式数据
-    crawler = CtripCrawler(cityList = cities, flightDate = datetime.date(2022,2,17), days = 30,
-                           ignore_cities = ignore_cities, ignore_threshold = ignore_threshold)
-    #crawler = CtripCrawler(['NKG','XIY','HGH'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold)
+    # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
+    # 运行参数：是否输出文件（否：生成列表）、存储路径、是否带格式
+    crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
+    #crawler = CtripCrawler(['NKG','CKG','CTU'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold, False)
     for data in crawler.run(path = path):
         pass
     else:
