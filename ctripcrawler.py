@@ -126,14 +126,15 @@ class CtripCrawler:
         self.with_return = with_return
 
         self.__idct = 0
+        self.days = self.day_range
         self.__avgTime = 3.5 if with_return else 1.8
 
 
     def __sizeof__(self) -> int:
         return self.__total
 
-
-    def day_range(self, skipSet: set = set()) -> int:
+    @property
+    def day_range(self) -> int:
         '''Day range preprocess'''
         currDate = datetime.datetime.now().toordinal()
         if currDate >= self.flightDate.toordinal():   # If collect day is behind today, change the beginning date and days of collect.
@@ -149,7 +150,7 @@ class CtripCrawler:
                     self.days -= total - self.day_limit
         if self.days <= 0:
             self.exits(3) #exit for day limit error
-        self.__total = (self.__codesum * (self.__codesum - 1) * self.days - (self.days * len(skipSet))) / 2
+        self.__total = self.__codesum * (self.__codesum - 1) * self.days / 2
         return self.days
 
     @property
@@ -372,7 +373,7 @@ class CtripCrawler:
         '''Collect all data, output and yield data of city tuple flights collected in list.'''
         print('\rGetting data...')
         skipSet = self.skip
-        self.days = self.day_range(skipSet)
+        self.__total -= self.days * len(skipSet)
         filesum = 0
         if with_output:
             path: Path = kwargs.get('path', Path())
