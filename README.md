@@ -4,7 +4,7 @@
 All folders' names are the data collecting date. A very beginning project :D
 
 # 流程说明
-## 数据收集（crawler.py）
+## 数据收集（CtripCrawler）
 
 ### 特性
 
@@ -35,7 +35,7 @@ All folders' names are the data collecting date. A very beginning project :D
 - [ ] 2022年3月15日至5月15日部分客流较高（2019年旅客吞吐量前100名）城市间航班数据（2022年1月29日起开始爬取，提前天数不超过45天）
 - [ ] 项目建模、训练、优化等工作完成后的测试和验证用例
 
-## 数据预处理（preprocess.py）
+## 数据预处理（Preprocessor）
 
 ### 折扣影响
 
@@ -70,7 +70,7 @@ All folders' names are the data collecting date. A very beginning project :D
 
 - **起降机场**：One-hot。通过机场系数表达：机场国际枢纽、大型枢纽、中型机场、支线机场
 - **城市级别**：One-hot。通过级别系数表达：一线、准一线、二线等
-- **地理位置**：矩阵。沿海、旅游、内地、西南
+- **地理位置**：One-hot。通过距东海岸距离系数表达远近
 - **航线客流**：起降机场系数之和。进一步分为干线、小干线、支线
 - **时刻密度**：同时段 / 同日期航班数量。进一步分为高、中、低
 

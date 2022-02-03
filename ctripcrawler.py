@@ -9,8 +9,6 @@ from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
 from pathlib import Path
 from random import random
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
 
 class CtripCrawler:
     """
@@ -108,36 +106,14 @@ class CtripCrawler:
         self.days = days
         self.day_limit = day_limit
 
-        self.__total = self.__codesum * (self.__codesum - 1) * self.days
-
-        if self.__total == 0 or self.__codesum <= 1:
-            self.exits(4)   #exit for ignored
-
-        self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
-        self.header = {"Content-Type": "application/json;charset=utf-8",
-                       "Accept": "application/json",
-                       "Accept-Language": "zh-cn",
-                       "Origin": "https://flights.ctrip.com",
-                       "Host": "flights.ctrip.com"}
-        self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
-
         self.ignore_cities = ignore_cities
         self.ignore_threshold = ignore_threshold
         self.with_return = with_return
 
-        self.__idct = 0
-        self.days = self.day_range
-        self.__avgTime = 3.5 if with_return else 1.8
-
-
-    def __sizeof__(self) -> int:
-        return self.__total
-
-    @property
-    def day_range(self) -> int:
         '''Day range preprocess'''
         currDate = datetime.datetime.now().toordinal()
         if currDate >= self.flightDate.toordinal():   # If collect day is behind today, change the beginning date and days of collect.
+            self.ignore_threshold = 0
             self.days -= currDate - self.flightDate.toordinal() + 1
             self.flightDate = self.flightDate.fromordinal(currDate + 1)
             if self.day_limit:   # If there's a limit for days in advance, change the days of collect.
@@ -151,7 +127,25 @@ class CtripCrawler:
         if self.days <= 0:
             self.exits(3) #exit for day limit error
         self.__total = self.__codesum * (self.__codesum - 1) * self.days / 2
-        return self.days
+
+        if self.__total == 0:
+            self.exits(4)   #exit for ignored
+
+        self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
+        self.header = {"Content-Type": "application/json;charset=utf-8",
+                       "Accept": "application/json",
+                       "Accept-Language": "zh-cn",
+                       "Origin": "https://flights.ctrip.com",
+                       "Host": "flights.ctrip.com"}
+        self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
+
+        self.__idct = 0
+        self.__avgTime = 3.5 if with_return else 1.7
+
+
+    def __sizeof__(self) -> int:
+        return self.__total
+
 
     @property
     def skip(self) -> set:
@@ -222,6 +216,7 @@ class CtripCrawler:
                 if (self.cityList[i], self.cityList[j]) in ignoreSet or (self.cityList[j], self.cityList[i]) in ignoreSet or self.cityList[i] == self.cityList[j]:
                     # If the city tuple is the same or found in the set, it shouldn't be processed.
                     skipSet.add((i, j))
+        self.__total -= self.days * len(skipSet)
         return skipSet
 
     @staticmethod
@@ -247,7 +242,7 @@ class CtripCrawler:
             return proxy
 
 
-    def data(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
+    def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
         datarows = list()
         dcityname = self.__airportCity.get(dcity, None)
         acityname = self.__airportCity.get(acity, None)
@@ -373,7 +368,6 @@ class CtripCrawler:
         '''Collect all data, output and yield data of city tuple flights collected in list.'''
         print('\rGetting data...')
         skipSet = self.skip
-        self.__total -= self.days * len(skipSet)
         filesum = 0
         if with_output:
             path: Path = kwargs.get('path', Path())
@@ -401,7 +395,7 @@ class CtripCrawler:
                         '''Get OUTbound flights data, 3 attempts for ample data'''
                         for j in range(3):
                             dataLen = len(datarows)
-                            datarows.extend(self.data(collectDate, dcityname, acityname))
+                            datarows.extend(self.collector(collectDate, dcityname, acityname))
                             if len(datarows) - dataLen >= self.ignore_threshold:
                                 break
                             elif i != 0 and len(datarows) - dataLen > 0:
@@ -417,7 +411,7 @@ class CtripCrawler:
                         if self.with_return:
                             for j in range(3):
                                 dataLen = len(datarows)
-                                datarows.extend(self.data(collectDate, acityname, dcityname))
+                                datarows.extend(self.collector(collectDate, acityname, dcityname))
                                 if len(datarows) - dataLen >= self.ignore_threshold:
                                     break
                                 elif i != 0 and len(datarows) - dataLen > 0:
