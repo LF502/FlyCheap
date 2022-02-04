@@ -256,7 +256,7 @@ class CtripCrawler:
         dow = self.__dayOfWeek[flightDate.isoweekday()]
         self.header["User-Agent"] = self.userAgent
         self.payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
-                                          "acityname": acityname, "date": flightDate.isoformat(), "dcityid": 1, "acityid": 2}]
+                                          "acityname": acityname, "date": flightDate.isoformat(),}]
 
         response = post(self.url, data = dumps(self.payload), headers = self.header, proxies = self.proxy)   # -> json()
         routeList = loads(response.text).get('data').get('routeList')   # -> list

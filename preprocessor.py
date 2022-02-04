@@ -1,4 +1,3 @@
-from typing import Generator
 import pandas
 import datetime
 from pathlib import Path
@@ -11,11 +10,21 @@ class Preprocessor:
     
     Parameters
     -----
-    path `Path()`: where to export excel
+    path: `Path` where to export excel
     
-    chinese_header `False`: whether the keywords show in Chinese, 
+            defalt: `Path()`, current folder
     
-    otherwise it's raw
+    collect_date: `datetime.date` date of collection
+    
+            defalt: `datetime.datetime.today()` or `from path`
+    
+    chinese_header: `bool` whether the keywords show in Chinese, 
+    
+            default: `False`, raw keywords
+    
+    filename: `str` name of export file
+    
+            default: `the last city tuple in Chinese` or `excel name`
     
     Required data
     -----
@@ -119,34 +128,31 @@ class Preprocessor:
 
     def __init__(self, **kwargs) -> None:
         self.__path: Path = kwargs.get('path', Path())
-        self.__filename: str = ''
+        self.__filename: str = kwargs.get('filename', '')
         self.header: list[str] = kwargs.get('chinese_header', False)
+        self.__collDate: datetime.date = kwargs.get('collect_date', datetime.datetime.now().date())
         try:
             if kwargs.get('excel', False):
                 self.data = pandas.read_excel(kwargs.get('excel')).iloc[ : , [0, 1, 2, 3, 4, 5, 6, 9]]
                 self.__filename: str = kwargs.get('excel').name
                 try:
                     self.__collDate = self.__path.parts[0].split('-', 2)
-                    self.__collDate: int = datetime.date(int(self.__collDate[0]), int(self.__collDate[1]), int(self.__collDate[2])).toordinal()
+                    self.__collDate = datetime.date(int(self.__collDate[0]), int(self.__collDate[1]), int(self.__collDate[2]))
                 except:
-                    self.__collDate: int = datetime.datetime.today().toordinal()
+                    self.__collDate = kwargs.get('collect_date', datetime.datetime.now().date())
             elif kwargs.get('list', False):
                 self.data = pandas.DataFrame(kwargs.get('list'), columns =
                             ('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时间', '到达时间', '价格', '折扣'))
                 self.data = self.data.droplevel(('到达时间', '价格'), 'columns')
-                self.__collDate = datetime.datetime.now().date()
-                self.__collDate: int = self.__collDate.toordinal()
             elif kwargs.get('dict', False):
                 self.data = pandas.DataFrame(kwargs.get('dict'))
-                self.__collDate = datetime.datetime.now().date()
-                self.__collDate: int = self.__collDate.toordinal()
             else:
                 print('  ---------------------------  ')
                 print('  WARNING: No data is loaded!  ')
                 print('  ---------------------------  ')
         except:
             raise ValueError('')
-
+        self.__collDate: int = self.__collDate.toordinal()
 
     @property
     def default_holiday(self) -> dict:
@@ -215,44 +221,37 @@ class Preprocessor:
         return self.__holidays[year]
 
 
-    def __convert_holiday(self, ordinal: int) -> Generator:
+    def __convert_holiday(self, ordinal: int) -> dict[str, bool]:
         date = datetime.date.fromordinal(ordinal)
-        holidays = self.__holidays.get(date.year) if self.__holidays.get(date.year) else self.get_holidays(date.year)
+        holidays: list[tuple[int, int]] = self.__holidays.get(date.year) if self.__holidays.get(date.year) else self.get_holidays(date.year)
 
+        holidaydict = {'spring_festival': False, 'in_holiday': False, 'before_holiday': False, 'after_holiday': False}
         for holiday in holidays:
-            if holiday[1] and holiday[0] <= ordinal < holiday[0] + holiday[1]:
-                yield False # Not in Spring Festival
-                yield True  # Is in a long holiday
-                break
-            elif not holiday[1] and holiday[0] <= ordinal < holiday[0] + 8:
-                yield True  # Is in Spring Festival
-                yield True  # Is in a long holiday
-                break
-        else:
-            yield False # Not in Spring Festival
-            yield False # Not in a long holiday
-        
-        flag = True
-        for holiday in holidays:
-            if flag and holiday[1] and 0 < holiday[0] - ordinal <= 7:
-                flag = False
-                yield True  # before a long holiday
-            elif flag and not holiday[1] and 0 < holiday[0] - ordinal <= 14:
-                flag = False
-                yield True  # before Spring Festival
-            elif flag and holiday[0] >= ordinal:
-                flag = False
-                yield False # Not before a long holiday
-
-            if not flag and holiday[1] and 0 < ordinal - holiday[0] - holiday[1] <= 7:
-                yield True  # after a long holiday
-                break
-            elif not flag and not holiday[1] and 0 < ordinal - holiday[0] - 2 <= 14:
-                yield True  # after Spring Festival
-                break
+            if ordinal - holiday[0] < -7:
+                continue
+            elif holiday[1] and ordinal - holiday[0] - holiday[1] > 7:
+                continue
+            elif not holiday[1] and ordinal - holiday[0] - 8 > 7:
+                continue
             
-        else:
-            yield False # Not after a long holiday
+            if holiday[1] and -7 <= ordinal - holiday[0] < 0:
+                holidaydict['before_holiday'] = True    #before holiday
+            elif not holiday[1] and -7 <= ordinal - holiday[0] < 0:
+                holidaydict['spring_festival'] = True   #spring festival
+                holidaydict['before_holiday'] = True    #before holiday
+            
+            elif holiday[1] and 0 <= ordinal - holiday[0] < holiday[1]:
+                holidaydict['in_holiday'] = True        #in holiday
+            elif not holiday[1] and 0 <= ordinal - holiday[0] < 8:
+                holidaydict['spring_festival'] = True   #spring festival
+                holidaydict['in_holiday'] = True        #in holiday
+            
+            elif holiday[1] and 0 <= ordinal - holiday[0] - holiday[1] <= 7:
+                holidaydict['after_holiday'] = True     #after holiday
+            elif not holiday[1] and 0 <= ordinal - holiday[0] - 8 <= 7:
+                holidaydict['spring_festival'] = True   #spring festival
+                holidaydict['after_holiday'] = True     #after holiday
+        return holidaydict
 
 
     def exporter(self, data: pandas.DataFrame) -> None:
@@ -305,9 +304,7 @@ class Preprocessor:
             if ordinal not in airlinedict:
                 airlinedict[ordinal] = set()   #initialize airline set of currdate for detecting competition between airlines
             if not holidaydict.get(ordinal):
-                holidaydict[ordinal] = []
-                for value in self.__convert_holiday(ordinal):
-                    holidaydict[ordinal].append(value)
+                holidaydict[ordinal] = self.__convert_holiday(ordinal)
             if daydict.get(ordinal):
                 daydict[ordinal] += 1
             else:
@@ -337,10 +334,8 @@ class Preprocessor:
         '''假日因素: 长假和春节  真 / 假'''
         alterdict = {'spring_festival': [], 'in_holiday': [], 'before_holiday': [], 'after_holiday': []}
         for ordinal in datelist:
-            value = 0
             for key in alterdict.keys():
-                alterdict[key].append(holidaydict[ordinal][value])
-                value += 1
+                alterdict[key].append(holidaydict[ordinal][key])
         data.loc[:, alterdict.keys()] = alterdict.values()
         del alterdict
         del holidaydict
@@ -492,9 +487,13 @@ class Preprocessor:
 
 if __name__ == '__main__':
 
-    path = Path('debugging')
+    path = Path('2022-01-26')
 
     for file in path.iterdir():
-        if file.match('*.xlsx') and '_preproc' not in file.name:
+        if file.match('*.xlsx') and 'preproc' not in file.name:
+            print('\n' + file.name, 'excel initializing...', end = '')
             debugging = Preprocessor(path = path, excel = file, chinese_header = True)
+            print('\r' + file.name, 'preprocess running...', end = '')
             debugging.run()
+            print('\r' + file.name, 'preprocess completed.', end = '')
+    print('\nFinished at', datetime.datetime.now().time().isoformat())
