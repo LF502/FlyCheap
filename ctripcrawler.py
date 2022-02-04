@@ -89,6 +89,7 @@ class CtripCrawler:
         'Mozilla/5.0 (X11; Linux x86_64; rv:94.0) Gecko/20100101 Firefox/94.0',
         'Mozilla/5.0 (X11; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
         'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
+    __lenAgents = len(__userAgents)
 
     def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, day_limit: int = 0, 
                  ignore_cities: set = None, ignore_threshold: int = 3, with_return: bool = True) -> None:
@@ -132,11 +133,12 @@ class CtripCrawler:
             self.exits(4)   #exit for ignored
 
         self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
-        self.header = {"Content-Type": "application/json;charset=utf-8",
-                       "Accept": "application/json",
-                       "Accept-Language": "zh-cn",
-                       "Origin": "https://flights.ctrip.com",
-                       "Host": "flights.ctrip.com"}
+        self.header = {"Content-Type": "application/json;charset=utf-8", 
+                       "Accept": "application/json", 
+                       "Accept-Language": "zh-cn", 
+                       "Origin": "https://flights.ctrip.com", 
+                       "Host": "flights.ctrip.com", 
+                       "Referer": "https://flights.ctrip.com/international/search/domestic", }
         self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
 
         self.__idct = 0
@@ -241,28 +243,26 @@ class CtripCrawler:
         finally:
             return proxy
 
+    @property
+    def userAgent(self) -> str:
+        '''Get a random User Agent'''
+        return self.__userAgents[int(self.__lenAgents * random())]
+
 
     def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
         datarows = list()
-        dcityname = self.__airportCity.get(dcity, None)
-        acityname = self.__airportCity.get(acity, None)
+        departureName = dcityname = self.__airportCity.get(dcity, None)
+        arrivalName = acityname = self.__airportCity.get(acity, None)
         dow = self.__dayOfWeek[flightDate.isoweekday()]
-        self.header["User-Agent"] =  self.__userAgents[int(len(self.__userAgents) * random())]
-        self.header["Referer"] = "https://flights.ctrip.com/itinerary/oneway/" + acity + '-' + dcity
+        self.header["User-Agent"] = self.userAgent
         self.payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                           "acityname": acityname, "date": flightDate.isoformat(), "dcityid": 1, "acityid": 2}]
 
-        try:
-            response = post(self.url, data = dumps(self.payload), headers = self.header, proxies = self.proxy)   # -> json()
-            routeList = loads(response.text).get('data').get('routeList')   # -> list
-            response.close
-            #print(routeList)
-        except:
-            try:
-                response.close
-            finally:
-                return datarows
-        if routeList is None:   # No data, ignore these flights in the future.
+        response = post(self.url, data = dumps(self.payload), headers = self.header, proxies = self.proxy)   # -> json()
+        routeList = loads(response.text).get('data').get('routeList')   # -> list
+        response.close
+        #print(routeList)
+        if routeList is None:   # No data, return empty and ignore these flights in the future.
             return datarows
 
         d_multiairport = True if dcityname == '北京' or dcityname == '上海' or dcityname== '成都' else False
@@ -277,23 +277,19 @@ class CtripCrawler:
                         continue    # Shared flights not collected
                     airlineName = flight.get('airlineName')
                     if '旗下' in airlineName:   # Airline name should be as simple as possible
-                        airlineName = airlineName.split('旗下', 1)[1]
-                    departureTime = datetime.time().fromisoformat(flight.get('departureDate').split(' ', 1)[1])  # Convert the time string to a time class
-                    arrivalTime = datetime.time().fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])  # Convert the time string to a time class
-                    if d_multiairport:
+                        airlineName = airlineName.split('旗下', 1)[1]   # Convert the time string to a time class
+                    departureTime = datetime.time().fromisoformat(flight.get('departureDate').split(' ', 1)[1])
+                    arrivalTime = datetime.time().fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
+                    if d_multiairport:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportInfo').get('airportName')
                         departureName = dcityname + match('成?都?(.*?)国?际?机场', departureName).groups()[0]
-                    elif dcityname: # If dcityname exists, that means the code-name is in the default code-name dict
-                        departureName = dcityname   # Multi-airport cities need the airport name while others do not
-                    else:   # If dcityname is None, that means the code-name is not in the default code-name dict
-                        departureName = flight.get('departureAirportInfo').get('cityName')
-                        self.__airportCity[dcity] = departureName  # ...therefore it is added now 
+                    elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
+                        departureName = flight.get('departureAirportInfo').get('cityName')  # Otherwise the code-name is not
+                        self.__airportCity[dcity] = departureName  # ...in the code-name dict, therefore it is added now 
                     if a_multiairport:
                         arrivalName = flight.get('arrivalAirportInfo').get('airportName')
                         arrivalName = acityname + match('成?都?(.*?)国?际?机场', arrivalName).groups()[0]
-                    elif acityname:
-                        arrivalName = acityname
-                    else:
+                    elif not arrivalName:
                         arrivalName = flight.get('arrivalAirportInfo').get('cityName')
                         self.__airportCity[acity] = arrivalName
                     craftType = flight.get('craftTypeKindDisplayName').strip('型')
@@ -301,9 +297,10 @@ class CtripCrawler:
                     price = ticket.get('price').get('price')
                     rate = ticket.get('price').get('rate')
                     datarows.append([flightDate, dow, airlineName, craftType, departureName, arrivalName, 
-                                    departureTime, arrivalTime, price, rate, ])
-                    #日期，星期，航司，机型，出发机场，到达机场，出发时间，到达时间，价格，折扣
+                                     departureTime, arrivalTime, price, rate, ])
+                    # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
         except:
+            print('\tWARN: data error', end = '')
             return list()
         return datarows
 
@@ -454,14 +451,14 @@ if __name__ == "__main__":
     if not path.exists():
         Path.mkdir(path)
 
-    # 城市列表，处理表中各城市对的航班（第一天少于3个则忽略），分类有: 华北+东北、华东、西南、西北+新疆、中南
+    # 城市列表, 处理表中各城市对的航班（第一天少于3个则忽略）, 分类有: 华北+东北、华东、西南、西北+新疆、中南
     cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
               'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
               'CTU','CKG','KMG','JHG',
               'URC','XIY','LHW','LXA',
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     
-    # 忽略阈值，低于该值则不统计航班，0为都爬取并统计
+    # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
     ignore_cities = None
 
