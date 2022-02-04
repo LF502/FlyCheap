@@ -35,7 +35,7 @@ class Preprocessor:
     
     to_class, to_tourism, rate, dep_time, hour_density, hour_ratio
     
-    中文输出参数
+    中文输出表头
     -----
     (序号), 日期, 星期, 日密度, 春节, 长假, 假期前, 假期后, 机型, 
     
@@ -390,13 +390,13 @@ class Preprocessor:
         for i in self.data.get('出发机场'):
             if not citydict.get(i):
                 citydict[i] = dict()
-                citydict[i]['airport'] = (self.__airports.get(i, 0.05))
-                citydict[i]['loc'] = (self.__cityLocation.get(i, 0.5))
-                citydict[i]['class'] = (self.__cityClass.get(i, 0.2))
+                citydict[i]['airport'] = self.__airports.get(i, 0.05)
+                citydict[i]['loc'] = self.__cityLocation.get(i, 0.5)
+                citydict[i]['class'] = self.__cityClass.get(i, 0.2)
                 if i in self.__tourism:
-                    citydict[i]['tourism'] = (True)
+                    citydict[i]['tourism'] = True
                 else:
-                    citydict[i]['tourism'] = (False)
+                    citydict[i]['tourism'] = False
             alterdict['from'].append(citydict.get(i).get('airport'))
             alterdict['from_loc'].append(citydict.get(i).get('loc'))
             alterdict['from_class'].append(citydict.get(i).get('class'))
@@ -408,13 +408,13 @@ class Preprocessor:
         for j in self.data.get('到达机场'):
             if not citydict.get(j):
                 citydict[j] = dict()
-                citydict[j]['airport'] = (self.__airports.get(j, 0.05))
-                citydict[j]['loc'] = (self.__cityLocation.get(j, 0.5))
-                citydict[j]['class'] = (self.__cityClass.get(j, 0.2))
+                citydict[j]['airport'] = self.__airports.get(j, 0.05)
+                citydict[j]['loc'] = self.__cityLocation.get(j, 0.5)
+                citydict[j]['class'] = self.__cityClass.get(j, 0.2)
                 if j in self.__tourism:
-                    citydict[j]['tourism'] = (True)
+                    citydict[j]['tourism'] = True
                 else:
-                    citydict[j]['tourism'] = (False)
+                    citydict[j]['tourism'] = False
             alterdict['to'].append(citydict.get(j).get('airport'))
             alterdict['to_loc'].append(citydict.get(j).get('loc'))
             alterdict['to_class'].append(citydict.get(j).get('class'))
@@ -454,40 +454,35 @@ class Preprocessor:
         alterlist.sort()    #sort dep time list in ascending order
         data = data.sort_values('dep_time')   #sort data by dep time too, so the alterlist and data are coordinated
         del datelist
-        del hourdict
         del hourlist
-
-        rtdict = dict()
-        for i in range(24):
-            rtdict[i] = 0    #initialize all keys (hour) of the time-rate dict to 0
-        i = total = fcount = sum =0
-        curr = int(alterlist[0])
-        for item in data.get('rate'):
-            sum+= item  #sum every rate for avg
-            dtime = int(alterlist[i])   #dep time in int
-            diff = dtime - curr #time difference
-            if diff:    #more than one hour passed
-                rtdict[curr] = total / fcount   #avg rate of current time added
-                curr += diff
-                fcount = total = 0  #flights counted and flight rates sumed
-            total += item   #rate added
-            fcount += 1 #flight +1
-            i+= 1   #dep time list item and rate sumed +1
-        else:
-            rtdict[curr] = total / fcount
-            sum /= i #rate avg
-        #time-rate.py combined
 
         '''dep time is defined by the percentage of avg rate'''
         '''出发时系数通过同时段折扣平均数 / 日平均折扣换算为1附近系数'''
+        alterdict = dict()
+        i = sum = 0
+        for item in data.get('rate'):
+            dtime = int(alterlist[i])
+            i += 1
+            sum += item
+            if alterdict.get(dtime):
+                alterdict[dtime].append(item)
+            else:
+                alterdict[dtime] = [item, ]
+        for key in alterdict.keys():
+            hoursum = 0
+            for item in alterdict[key]:
+                hoursum += item
+            else:
+                alterdict[key] = round(hoursum / len(alterdict[key]) / sum * len(alterlist), 2)
+
         i = 0
         for item in alterlist:
-            alterlist[i] = round(rtdict[int(item)] / sum, 2)
+            alterlist[i] = alterdict[int(item)]
             i += 1
         data.loc[:, 'hour_ratio'] = alterlist
         del alterlist
-        del rtdict
-        
+        del alterdict
+
         return data
 
 
@@ -497,7 +492,7 @@ class Preprocessor:
 
 if __name__ == '__main__':
 
-    path = Path('2022-01-23')
+    path = Path('debugging')
 
     for file in path.iterdir():
         if file.match('*.xlsx') and '_preproc' not in file.name:
