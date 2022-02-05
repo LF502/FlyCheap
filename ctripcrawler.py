@@ -238,7 +238,7 @@ class CtripCrawler:
                 proxy = {"http": "http://" + proxy.text.strip()}
         except:
             proxy = None
-            print('\tNo porxy warn', end='')
+            print('\tWARN: no proxy', end='')
             time.sleep((round(3 * random(), 2)))
         finally:
             return proxy
