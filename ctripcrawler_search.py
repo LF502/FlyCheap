@@ -2,19 +2,17 @@ import datetime
 import time
 import hashlib
 import random
-from typing import Generator
-from urllib import response
-from requests import get, post
-from json import dumps
-from re import match
-from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
+from typing import Generator
+from requests import get, post
+from json import dumps
+from pathlib import Path
 
-class CtripCrawler:
+class CtripSearcher:
     """
-    Ctrip flight tickets crawler
+    Ctrip flight tickets crawler using search batch method
     
     Use `run` to process!
     """
@@ -489,8 +487,8 @@ if __name__ == "__main__":
     print('Initializing...', end='')
     
     # 文件夹名设置为当前日期
-    path = Path('debugging')   #测试用例
-    #path = Path(str(datetime.datetime.now().date()))
+    #path = Path('debugging')   #测试用例
+    path = Path(str(datetime.datetime.now().date()))
     if not path.exists():
         Path.mkdir(path)
 
@@ -508,8 +506,8 @@ if __name__ == "__main__":
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数：是否输出文件（否：生成列表）、存储路径、是否带格式
-    #crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
-    crawler = CtripCrawler(['SHA','CTU'], datetime.date(2022,2,11), 2, 0, ignore_cities, ignore_threshold)
+    crawler = CtripSearcher(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
+    #crawler = CtripSearcher(['SHA','CTU'], datetime.date(2022,2,11), 2, 0, ignore_cities, ignore_threshold)
     for data in crawler.run(path = path):
         pass
     else:
