@@ -3,7 +3,6 @@ import time
 from typing import Generator
 from requests import get, post
 from json import dumps, loads
-from re import match
 import openpyxl
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
@@ -91,8 +90,9 @@ class CtripCrawler:
         'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
     __lenAgents = len(__userAgents)
 
-    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, day_limit: int = 0, 
-                 ignore_cities: set = None, ignore_threshold: int = 3, with_return: bool = True) -> None:
+
+    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, 
+                 day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3, with_return: bool = True) -> None:
 
         try:
             self.__codesum = len(cityList)
@@ -132,6 +132,9 @@ class CtripCrawler:
         if self.__total == 0:
             self.exits(4)   #exit for ignored
 
+        self.__idct = 0
+        self.__avgTime = 3.5 if with_return else 1.7
+
         self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
         self.header = {"Content-Type": "application/json;charset=utf-8", 
                        "Accept": "application/json", 
@@ -140,9 +143,6 @@ class CtripCrawler:
                        "Host": "flights.ctrip.com", 
                        "Referer": "https://flights.ctrip.com/international/search/domestic", }
         self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
-
-        self.__idct = 0
-        self.__avgTime = 3.5 if with_return else 1.7
 
 
     def __sizeof__(self) -> int:
@@ -253,12 +253,13 @@ class CtripCrawler:
         datarows = list()
         departureName = dcityname = self.__airportCity.get(dcity, None)
         arrivalName = acityname = self.__airportCity.get(acity, None)
+        header, payload = self.header, self.payload
         dow = self.__dayOfWeek[flightDate.isoweekday()]
-        self.header["User-Agent"] = self.userAgent
-        self.payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
+        header["User-Agent"] = self.userAgent
+        payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                           "acityname": acityname, "date": flightDate.isoformat(),}]
 
-        response = post(self.url, data = dumps(self.payload), headers = self.header, proxies = self.proxy)   # -> json()
+        response = post(self.url, data = dumps(payload), headers = header, proxies = self.proxy)   # -> json()
         routeList = loads(response.text).get('data').get('routeList')   # -> list
         response.close
         #print(routeList)
@@ -282,13 +283,13 @@ class CtripCrawler:
                     arrivalTime = datetime.time().fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
                     if d_multiairport:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportInfo').get('airportName')
-                        departureName = dcityname + match('成?都?(.*?)国?际?机场', departureName).groups()[0]
+                        departureName = dcityname + departureName.strip('成都')[:2]
                     elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
                         departureName = flight.get('departureAirportInfo').get('cityName')  # Otherwise the code-name is not
-                        self.__airportCity[dcity] = departureName  # ...in the code-name dict, therefore it is added now 
+                        self.__airportCity[dcity] = departureName   # ...in the code-name dict, therefore it is added now 
                     if a_multiairport:
                         arrivalName = flight.get('arrivalAirportInfo').get('airportName')
-                        arrivalName = acityname + match('成?都?(.*?)国?际?机场', arrivalName).groups()[0]
+                        arrivalName = acityname + arrivalName.strip('成都')[:2]
                     elif not arrivalName:
                         arrivalName = flight.get('arrivalAirportInfo').get('cityName')
                         self.__airportCity[acity] = arrivalName
@@ -352,9 +353,10 @@ class CtripCrawler:
         return values_only
 
 
-    def output_new_ignorance(self, ignoreNew: set = set()) -> bool:
+    @staticmethod
+    def output_new_ignorance(ignore_threshold: int = 3, ignoreNew: set = set()) -> bool:
         if len(ignoreNew) > 0:
-            with open('CityTuples_FlightsLessThan{}.txt'.format(self.ignore_threshold), 'a', encoding = 'UTF-8') as updates:
+            with open('CityTuples_FlightsLessThan{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
                 updates.write(str(ignoreNew) + '\n')
             return True
         else:
@@ -366,6 +368,7 @@ class CtripCrawler:
         print('\rGetting data...')
         skipSet = self.skip
         filesum = 0
+        ignoreNew = set()
         if with_output:
             path: Path = kwargs.get('path', Path())
             values_only: bool = kwargs.get('values_only', False)
@@ -383,7 +386,6 @@ class CtripCrawler:
                 if (dcity, acity) not in skipSet:   # If the city tuple key / coordinate is not found, process.
                     collectDate = self.flightDate   #reset
                     datarows = []
-                    ignoreNew = set()
                     for i in range(self.days):
                         dcityname = self.cityList[dcity]
                         acityname = self.cityList[acity]
@@ -433,7 +435,7 @@ class CtripCrawler:
                         yield datarows
 
         if with_output:
-            if self.output_new_ignorance(ignoreNew):
+            if self.output_new_ignorance(self.ignore_threshold, ignoreNew):
                 print('Ignorance set updated, ', end = '')
             print(filesum, 'new files in', path.name) if filesum > 1 else print(filesum, 'new file in', path.name)
 
