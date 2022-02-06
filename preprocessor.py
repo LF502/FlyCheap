@@ -94,7 +94,7 @@ class Preprocessor:
                    '南平': 0.4, '吉林': 0.4, '安庆': 0.4, '泰安': 0.4, '宿迁': 0.4, 
                    '包头': 0.4, '郴州': 0.4, '南充': 0.4, }
     __cityLocation = {'北京首都': 0.2, '北京大兴': 0.2, '上海虹桥': 0, '上海浦东': 0, 
-                      '北京': 0.2, '成都': 0.2, '上海': 0, '广州': 0, '重庆': 0.7, 
+                      '北京': 0.2, '成都': 0.8, '上海': 0, '广州': 0, '重庆': 0.7, 
                       '深圳': 0, '成都双流': 0.8, '成都天府': 0.8, '杭州': 0.1, 
                       '武汉': 0.5, '西安': 0.6, '苏州': 0.1, '南京': 0.2, '天津': 0, 
                       '长沙': 0.5, '郑州': 0.4, '青岛': 0, '沈阳': 0.1, '宁波': 0, 
@@ -139,8 +139,7 @@ class Preprocessor:
                 self.data = pandas.read_excel(kwargs.get('excel')).iloc[ : , [0, 1, 2, 3, 4, 5, 6, 9]]
                 self.__filename: str = kwargs.get('excel').name
                 try:
-                    self.__collDate = self.__path.parts[0].split('-', 2)
-                    self.__collDate = datetime.date(int(self.__collDate[0]), int(self.__collDate[1]), int(self.__collDate[2]))
+                    self.__collDate = datetime.datetime.fromisoformat(self.__path.parts[0])
                 except:
                     self.__collDate = kwargs.get('collect_date', datetime.datetime.now().date())
             elif kwargs.get('list', False):
@@ -226,9 +225,10 @@ class Preprocessor:
 
     def __convert_holiday(self, ordinal: int) -> dict[str, bool]:
         date = datetime.date.fromordinal(ordinal)
-        holidays: list[tuple[int, int]] = self.__holidays.get(date.year) if self.__holidays.get(date.year) else self.get_holidays(date.year)
+        holidays = self.__holidays.get(date.year) if self.__holidays.get(date.year) else self.get_holidays(date.year)
 
-        holidaydict = {'spring_festival': False, 'in_holiday': False, 'before_holiday': False, 'after_holiday': False}
+        holidaydict = {'spring_festival': False, 'in_holiday': False, 
+                       'before_holiday': False, 'after_holiday': False}
         for holiday in holidays:
             if ordinal - holiday[0] < -7:
                 continue
@@ -275,11 +275,15 @@ class Preprocessor:
         '''
         if self.header:
             header = {'date': '日期', 'weekday': '星期', 'day_density': '日密度', 
-                      'spring_festival': '春节', 'in_holiday': '长假', 'before_holiday': '假期前', 'after_holiday': '假期后', 
+                      'spring_festival': '春节', 'in_holiday': '长假', 
+                      'before_holiday': '假期前', 'after_holiday': '假期后', 
                       'craft_type': '机型', 'airline': '航司', 'competition': '竞争', 
-                      'from': '出发机场', 'from_loc': '出发位置','from_class': '出发地级', 'from_tourism': '出发旅游', 
-                      'to': '到达机场', 'to_loc': '到达位置', 'to_class': '到达地级', 'to_tourism': '到达旅游', 
-                      'rate': '机票折扣', 'dep_time': '出发时刻', 'hour_density': '时刻密度', 'hour_ratio': '时刻系数'}
+                      'from': '出发机场', 'from_loc': '出发位置', 
+                      'from_class': '出发地级', 'from_tourism': '出发旅游', 
+                      'to': '到达机场', 'to_loc': '到达位置', 
+                      'to_class': '到达地级', 'to_tourism': '到达旅游', 
+                      'rate': '机票折扣', 'dep_time': '出发时刻', 
+                      'hour_density': '时刻密度', 'hour_ratio': '时刻系数'}
             data.rename(header, axis = 'columns', inplace = True)
             index_label = '序号'
         else:
@@ -298,20 +302,20 @@ class Preprocessor:
         daydict = dict()
         hourdict = dict()
 
-        '''current dates, defined by how many days remain before the departure of flights (int, collect date - dep date)'''
+        '''current dates, defined by how many days remain before the departure of a flight'''
         '''日期通过数据收集时间距航班起飞时间定义, 为整数'''
         alterlist = []
         for item in self.data.get('日期'):
             ordinal = item.toordinal()
             alterlist.append(ordinal - self.__collDate)
             if ordinal not in airlinedict:
-                airlinedict[ordinal] = set()   #initialize airline set of currdate for detecting competition between airlines
-            if not holidaydict.get(ordinal):
+                airlinedict[ordinal] = set()    #airline set - competition
+            if not holidaydict.get(ordinal):    #holiday dict - holiday process
                 holidaydict[ordinal] = self.__convert_holiday(ordinal)
-            if daydict.get(ordinal):
+            if daydict.get(ordinal):            #day dict - day density
                 daydict[ordinal] += 1
             else:
-                hourdict[ordinal] = dict()
+                hourdict[ordinal] = dict()      #hour dict - hour density / time-rate
                 daydict[ordinal] = 1
             datelist.append(ordinal)
         data.loc[:, 'date'] = alterlist
@@ -326,6 +330,7 @@ class Preprocessor:
         del alterlist
         
         '''day density -> flights between cities every day'''
+        '''日密度: 每天往返城市对间航班数量, 为整数'''
         alterlist = []
         for ordinal in datelist:
             alterlist.append(daydict.get(ordinal))
@@ -490,13 +495,15 @@ class Preprocessor:
 
 if __name__ == '__main__':
 
-    path = Path('2022-01-26')
-
-    for file in path.iterdir():
-        if file.match('*.xlsx') and 'preproc' not in file.name:
-            print('\n' + file.name, 'excel initializing...', end = '')
-            debugging = Preprocessor(path = path, excel = file, chinese_header = True)
-            print('\r' + file.name, 'preprocess running...', end = '')
-            debugging.run()
-            print('\r' + file.name, 'preprocess completed.', end = '')
-    print('\nFinished at', datetime.datetime.now().time().isoformat())
+    folders = ['2022-01-28', ]
+    
+    for strings in folders:
+        path = Path(strings)
+        for file in path.iterdir():
+            if file.match('*.xlsx') and 'preproc' not in file.name:
+                print('\r' + file.name, 'excel initializing...', end = '')
+                debugging = Preprocessor(path = path, excel = file, chinese_header = True)
+                print('\r' + file.name, 'preprocess running...', end = '')
+                debugging.run()
+                print('\r' + file.name, 'preprocess completed.', end = '')
+        print(f'\n{strings} finished at', datetime.datetime.now().time().isoformat('seconds'))
