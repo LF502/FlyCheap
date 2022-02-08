@@ -28,10 +28,11 @@ class CtripSearcher(CtripCrawler):
         'YIN':'伊宁','ENH':'恩施','ACX':'兴义','HYN':'台州','TCZ':'腾冲','DAT':'大同','BSD':'保山','BFJ':'毕节','NNY':'南阳',
         'WXN':'万州','TGO':'通辽','CGD':'常德','HNY':'衡阳','XIC':'西昌','MDG':'牡丹江','RIZ':'日照','NAO':'南充','YBP':'宜宾',}
 
-    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, 
-                 day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3, with_return: bool = True) -> None:
+    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), 
+                 days: int = 1, day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3, 
+                 with_return: bool = True, proxy: str | bool = None) -> None:
 
-        CtripCrawler.__init__(self, cityList, flightDate, days, day_limit, ignore_cities, ignore_threshold, with_return)
+        CtripCrawler.__init__(self, cityList, flightDate, days, day_limit, ignore_cities, ignore_threshold, with_return, proxy)
 
         self.__codesum = len(cityList)
         self.__total = self.__codesum * (self.__codesum - 1) * self.days / 2
@@ -61,13 +62,9 @@ class CtripSearcher(CtripCrawler):
         return _sign.hexdigest()
 
     @staticmethod
-    def transaction_id(dep: str, arr: str, date: str, userAgent: str = None, proxy: dict = None):
-        url = f"https://flights.ctrip.com/international/search/api/flightlist/oneway-{dep}-{arr}?_=1&depdate={date}&cabin=y"
-        header = {"origin": "https://flights.ctrip.com", 
-                  "content-type": "application/json;charset=UTF-8", 
-                  "User-Agent": userAgent, 
-                  "referer": "https://flights.ctrip.com/international/search/domestic"}
-        response = get(url, headers = header, proxies = proxy)
+    def transaction_id(dep: str, arr: str, date: str, proxy: dict = None):
+        url = f"https://flights.ctrip.com/international/search/api/flightlist/oneway-{dep}-{arr}?_=1&depdate={date}&cabin=y&containstax=1"
+        response = get(url, proxies = proxy)
         if response.status_code != 200:
             print("\tWARN: get transaction id failed, status code", response.status_code, end = '')
             return "", None
@@ -87,17 +84,17 @@ class CtripSearcher(CtripCrawler):
         departureName = dcityname = self.__airportCity.get(dcity, None)
         arrivalName = acityname = self.__airportCity.get(acity, None)
         dow, date = self.__dayOfWeek[flightDate.isoweekday()], flightDate.isoformat()
-        userAgent, proxy = self.userAgent, self.proxy
-        transaction_id, data = self.transaction_id(dcity, acity, date, userAgent, proxy)
+        proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
+        transaction_id, data = self.transaction_id(dcity, acity, date, proxy)
         if transaction_id == "" or data is None:
             return datarows
         header = {"origin": "https://flights.ctrip.com", 
-                  "content-type": "application/json;charset=UTF-8", 
-                  "User-Agent": userAgent, 
+                  "referer": f"https://flights.ctrip.com/online/list/oneway-{dcity}-{acity}?_=1&depdate={date}&cabin=y&containstax=1", 
                   "transactionid": transaction_id, 
                   "sign": self.sign(transaction_id, dcity, acity, date), 
                   "scope": data["scope"], 
-                  "referer": f"https://flights.ctrip.com/online/list/oneway-{dcity}-{acity}?_=1&depdate={date}&cabin=y", 
+                  "content-type": "application/json;charset=UTF-8",
+                  "user-agent": self.userAgent, 
                   "cookie": self.cookie, }
 
         response = post(self.url, data = dumps(data), headers = header, proxies = proxy)
@@ -178,11 +175,14 @@ if __name__ == "__main__":
     ignore_threshold = 3
     ignore_cities = None
 
+    # 代理API
+    proxyurl = None
+
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数：是否输出文件（否：生成列表）、存储路径、是否带格式
     crawler = CtripSearcher(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
-    #crawler = CtripSearcher(['SHA','CTU'], datetime.date(2022,2,11), 2, 0, ignore_cities, ignore_threshold)
+    #crawler = CtripSearcher(['SHA','CTU'], datetime.date(2022,2,11), 1, 0, ignore_cities, ignore_threshold)
     for data in crawler.run(path = path):
         pass
     else:

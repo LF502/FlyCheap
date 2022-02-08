@@ -91,8 +91,9 @@ class CtripCrawler:
     __lenAgents = len(__userAgents)
 
 
-    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), days: int = 1, 
-                 day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3, with_return: bool = True) -> None:
+    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), 
+                 days: int = 1, day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3,
+                 with_return: bool = True, proxy: str | bool = None) -> None:
 
         try:
             self.__codesum = len(cityList)
@@ -143,6 +144,20 @@ class CtripCrawler:
                        "Host": "flights.ctrip.com", 
                        "Referer": "https://flights.ctrip.com/international/search/domestic", }
         self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
+
+        if proxy == False:
+            self.proxylist = False
+        elif isinstance(proxy, str):
+            try:
+                with get(proxy) as proxy:
+                    proxy = proxy.json().get("data")
+                self.proxylist = []
+                for item in proxy:
+                    self.proxylist.append(f"http://{item.get('ip')}:{item.get('port')}")
+            except:
+                self.proxylist = None
+        else:
+            self.proxylist = None
 
 
     def __sizeof__(self) -> int:
@@ -231,7 +246,7 @@ class CtripCrawler:
         sys.exit()
 
     @property
-    def proxy(self) -> dict | None:
+    def proxypool(self) -> dict | None:
         '''Get a random proxy from Proxy Pool'''
         try:
             with get('http://127.0.0.1:5555/random') as proxy:
@@ -242,6 +257,10 @@ class CtripCrawler:
             time.sleep((round(3 * random(), 2)))
         finally:
             return proxy
+    
+    @property
+    def proxy(self) -> dict:
+        return {"http": self.proxylist[int(len(self.proxylist) * random())]}
 
     @property
     def userAgent(self) -> str:
@@ -250,6 +269,7 @@ class CtripCrawler:
 
 
     def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
+        proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
         datarows = list()
         departureName = dcityname = self.__airportCity.get(dcity, None)
         arrivalName = acityname = self.__airportCity.get(acity, None)
@@ -259,7 +279,7 @@ class CtripCrawler:
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                           "acityname": acityname, "date": flightDate.isoformat(),}]
 
-        response = post(self.url, data = dumps(payload), headers = header, proxies = self.proxy)   # -> json()
+        response = post(self.url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
         routeList = loads(response.text).get('data').get('routeList')   # -> list
         response.close
         #print(routeList)
@@ -463,12 +483,15 @@ if __name__ == "__main__":
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
     ignore_cities = None
+    
+    # 代理API
+    proxyurl = None
 
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数：是否输出文件（否：生成列表）、存储路径、是否带格式
-    crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
-    #crawler = CtripCrawler(['NKG','CKG','CTU'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold, False)
+    #crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
+    crawler = CtripCrawler(['NKG','CKG','CTU'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold, proxy = proxyurl)
     for data in crawler.run(path = path):
         pass
     else:
