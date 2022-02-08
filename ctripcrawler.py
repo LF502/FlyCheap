@@ -279,8 +279,12 @@ class CtripCrawler:
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                           "acityname": acityname, "date": flightDate.isoformat(),}]
 
-        response = post(self.url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
-        routeList = loads(response.text).get('data').get('routeList')   # -> list
+        try:
+            response = post(self.url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
+            routeList = loads(response.text).get('data').get('routeList')   # -> list
+        except:
+            response.close
+            return datarows
         response.close
         #print(routeList)
         if routeList is None:   # No data, return empty and ignore these flights in the future.
@@ -489,9 +493,9 @@ if __name__ == "__main__":
 
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
-    # 运行参数：是否输出文件（否：生成列表）、存储路径、是否带格式
-    #crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
-    crawler = CtripCrawler(['NKG','CKG','CTU'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold, proxy = proxyurl)
+    # 运行参数: 是否输出文件（否: 生成列表）、存储路径、是否带格式
+    crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold, True, proxyurl)
+    #crawler = CtripCrawler(['NKG','CKG','CTU'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold, True, proxy = proxyurl)
     for data in crawler.run(path = path):
         pass
     else:

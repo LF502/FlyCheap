@@ -97,8 +97,8 @@ class CtripSearcher(CtripCrawler):
                   "user-agent": self.userAgent, 
                   "cookie": self.cookie, }
 
-        response = post(self.url, data = dumps(data), headers = header, proxies = proxy)
         try:
+            response = post(self.url, data = dumps(data), headers = header, proxies = proxy)
             routeList = response.json()
             response.close
             if routeList["data"]["context"]["flag"] == 0:
@@ -180,7 +180,7 @@ if __name__ == "__main__":
 
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
-    # 运行参数：是否输出文件（否：生成列表）、存储路径、是否带格式
+    # 运行参数: 是否输出文件（否: 生成列表）、存储路径、是否带格式
     crawler = CtripSearcher(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold)
     #crawler = CtripSearcher(['SHA','CTU'], datetime.date(2022,2,11), 1, 0, ignore_cities, ignore_threshold)
     for data in crawler.run(path = path):
