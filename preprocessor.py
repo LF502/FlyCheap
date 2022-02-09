@@ -12,11 +12,11 @@ class Preprocessor:
     -----
     path: `Path` where to export excel
     
-            defalt: `Path()`, current folder
+            default: `Path()`, current folder
     
     collect_date: `datetime.date` date of collection
     
-            defalt: `datetime.datetime.today()` or `from path`
+            default: `datetime.datetime.today()` or `from path`
     
     chinese_header: `bool` whether the keywords show in Chinese, 
     
@@ -125,7 +125,7 @@ class Preprocessor:
     __springFest = {2022: datetime.date(2022, 1, 31), 2023: datetime.date(2023, 1, 21)}
     __dragonBoat = {2022: datetime.date(2022, 6, 3), 2023: datetime.date(2023, 6, 22)}
     __midAutumn = {2022: datetime.date(2022, 9, 10), 2023: datetime.date(2023, 9, 29)}
-    __holidaysDefault = {1: (1, 3), 4: (4, 3), 5: (1, 5), 7: (17, 15), 8: (1, 16), 10: (1, 7)}
+    __holidaysDefault = {1: (1, 3), 4: (4, 3), 5: (1, 5), 7: (7, 25), 8: (1, 24), 10: (1, 7)}
     __holidays = dict()
     # {year: [(ordinal, holiday duration), ...], ...}   --all in int, Spring Festival duration is 0
 
