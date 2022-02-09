@@ -25,82 +25,38 @@ __airportCity = {'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TF
                  'WXN':'万州','TGO':'通辽','CGD':'常德','HNY':'衡阳','XIC':'西昌','MDG':'牡丹江','RIZ':'日照','NAO':'南充','YBP':'宜宾',}
 sheets = ["总表", "干线", "小干线", "支线",]
 def run(path: pathlib.Path = pathlib.Path()):
-    rtdict = {}
-    namelist = {}
     wb = openpyxl.Workbook()
     for sheet in sheets:
-        namelist[sheet] = []
         wb.create_sheet(sheet)
-        wb[sheet].append(("城市对", 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24))
+        wb[sheet].append(("城市对", "平均航司竞争", "平均折扣"))
     wb.remove(wb.active)
     for file in path.iterdir():
-        # 原表格格式
-        # 日期，星期，航司，机型，出发机场，到达机场，出发时间，到达时间，价格，折扣
-        #  0     1    2     3      4        5        6        7      8     9
-        if not file.match('*.xlsx') or '_' in file.name:
+        if not file.match('*_preproc.xlsx'):
             continue
-        hourdict = {}
-        hourlist = []
-        for hour in range(5, 25):
-            hourdict[hour] = {"total": 0, "rate": 0}
         print('\r' + file.name, end = ' processing...')
-        data = pandas.read_excel(file.joinpath()).iloc[ : , [6, 9]]
+        data = pandas.read_excel(file.joinpath()).iloc[ : , [10, 19]]
         name = file.name.split('~')
         dcity = __airportCity.get(name[0])
-        acity = __airportCity.get(name[1].strip('.xlsx'))
+        acity = __airportCity.get(name[1].strip('_preproc.xlsx'))
         name = dcity + ' - ' + acity
-        rtdict[name] = {}
-        for hour in data.get('出发时'):
-            hour = hour.hour
-            if hour < 1:
-                hourdict[24]["total"] += 1
-                hourlist.append(24)
-            else:
-                hourdict[hour]["total"] += 1
-                hourlist.append(hour)
-        i = 0
-        for rate in data.get('折扣'):
-            hourdict[hourlist[i]]["rate"] += rate
-            i += 1
-        row = [name,]
-        for hour in range(5, 25):
-            if hourdict[hour]["total"]:
-                rtdict[name][hour] = hourdict[hour]
-                row.append(hourdict[hour]["rate"] / hourdict[hour]["total"])
-            else:
-                rtdict[name][hour] = {"rate": None, "total": None}
-                row.append(None)
+        complist, ratelist = data.get("竞争"), data.get("机票折扣")
+        comp = rate = 0
+        for item in complist:
+            comp += item
+        for item in ratelist:
+            rate += item
+        row = (name, comp / len(complist), rate / len(ratelist))
         wb["总表"].append(row)
-        namelist["总表"].append(name)
         apf = __airports.get(dcity, 0.05) + __airports.get(acity, 0.05)
         if apf >= 1.4:
             wb["干线"].append(row)
-            namelist["干线"].append(name)
         elif apf > 1:
             wb["小干线"].append(row)
-            namelist["小干线"].append(name)
         else:
             wb["支线"].append(row)
-            namelist["支线"].append(name)
-
-    for sheet in sheets:
-        row = ["加权平均",]
-        for hour in range(5, 25):
-            avg = 0
-            total = 0
-            for name in namelist[sheet]:
-                if rtdict[name][hour]['total']:
-                    avg += rtdict[name][hour]['rate']
-                    total += rtdict[name][hour]['total']
-            if total:
-                avg /= total
-            else:
-                avg = 0
-            row.append(avg)
-        wb[sheet].append(row)
-    wb.save(f"time-rate_{path.name}.xlsx")
+    wb.save(f"comp-rate_{path.name}.xlsx")
     wb.close
     print('\nDone!')
-
+        
 if __name__ == "__main__":
-    run(pathlib.Path('2022-02-08'))
+    run(pathlib.Path('2022-01-28'))
