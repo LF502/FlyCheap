@@ -280,11 +280,13 @@ class CtripCrawler:
                                           "acityname": acityname, "date": flightDate.isoformat(),}]
 
         try:
-            response = post(self.url, data = dumps(payload), headers = header, proxies = proxy)   # -> json()
+            response = post(self.url, data = dumps(payload), headers = header, proxies = proxy, timeout = 10)   # -> json()
             routeList = loads(response.text).get('data').get('routeList')   # -> list
         except:
-            response.close
-            return datarows
+            try:
+                response.close
+            finally:
+                return datarows
         response.close
         #print(routeList)
         if routeList is None:   # No data, return empty and ignore these flights in the future.

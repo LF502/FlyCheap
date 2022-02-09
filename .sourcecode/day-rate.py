@@ -1,16 +1,6 @@
 import pandas
 import pathlib
 import openpyxl
-__airports = {'北京': 1, '上海': 1, '广州': 1, 
-              '成都': 0.8, '深圳': 0.75, '昆明': 0.7, '西安': 0.65, 
-              '重庆': 0.65, '杭州': 0.6, '南京': 0.45, '郑州': 0.4, '厦门': 0.4, 
-              '武汉': 0.4, '长沙': 0.4, '青岛': 0.4, '海口': 0.35, '乌鲁木齐': 0.35, 
-              '天津': 0.35, '贵阳': 0.3, '哈尔滨': 0.3, '沈阳': 0.3, '三亚': 0.3, 
-              '大连': 0.3, '济南': 0.25, '南宁': 0.25, '兰州': 0.2, '福州': 0.2, 
-              '太原': 0.2, '长春': 0.2, '南昌': 0.2, '呼和浩特': 0.2, '宁波': 0.2, 
-              '温州': 0.2, '珠海': 0.2, '合肥': 0.2, '石家庄': 0.15, '银川': 0.15, 
-              '烟台': 0.15, '桂林': 0.1, '泉州': 0.1, '无锡': 0.1, '揭阳': 0.1, 
-              '西宁': 0.1, '丽江': 0.1, '西双版纳': 0.1, '南阳': 0.1,}
 __airportCity = {'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TFU':'成都','SZX':'深圳','KMG':'昆明','XIY':'西安','PEK':'北京',
                  'PKX':'北京','PVG':'上海','CKG':'重庆','HGH':'杭州','NKG':'南京','CGO':'郑州','XMN':'厦门','WUH':'武汉','CSX':'长沙',
                  'TAO':'青岛','HAK':'海口','URC':'乌鲁木齐','TSN':'天津','KWE':'贵阳','HRB':'哈尔滨','SHE':'沈阳','SYX':'三亚','DLC':'大连',
@@ -29,7 +19,7 @@ def run(path: pathlib.Path = pathlib.Path()):
     holiday_preproc = {}
     for file in pathlib.Path(path / pathlib.Path("preproc")).iterdir():
         preproc[file.name] = file
-    for file in pathlib.Path(path / pathlib.Path("holiday_proproc")).iterdir():
+    for file in pathlib.Path(path / pathlib.Path("holiday_preproc")).iterdir():
         holiday_preproc[file.name] = file
     
     rddict = {}
@@ -40,10 +30,12 @@ def run(path: pathlib.Path = pathlib.Path()):
     
     for key in holiday_preproc.keys():
         name = key.split('~')
-        dcity = __airportCity.get(name[0])
-        acity = __airportCity.get(name[1].strip('_preproc.xlsx'))
-        name = dcity + ' - ' + acity
+        dcity = name[0]
+        acity = name[1].strip('_preproc.xlsx')
         rkey = f"{acity}~{dcity}_preproc.xlsx"
+        dcity = __airportCity.get(dcity)
+        acity = __airportCity.get(acity)
+        name = dcity + ' - ' + acity
         if preproc.get(key) or preproc.get(rkey):
             rddict[name] = {}
             for file in (holiday_preproc.get(key), preproc.get(key), preproc.get(rkey)):
@@ -61,7 +53,7 @@ def run(path: pathlib.Path = pathlib.Path()):
                     else:
                         rddict[name][daylist[i]] = {"rate": ratelist[i], "total": denslist[i]}
             row = [name,]
-            for day in range(1, 50):
+            for day in range(1, 38):
                 if titleflag:
                     title.append(day)
                 try:
@@ -73,7 +65,7 @@ def run(path: pathlib.Path = pathlib.Path()):
                 titleflag = False
             ws.append(row)
     row = ["加权平均",]
-    for day in range(1, 50):
+    for day in range(1, 38):
         avg = 0
         total = 0
         for name in rddict:
@@ -91,4 +83,4 @@ def run(path: pathlib.Path = pathlib.Path()):
     print('\nDone!')
 
 if __name__ == "__main__":
-    run(pathlib.Path("2022-01-28"))
+    run(pathlib.Path("2022-02-09"))
