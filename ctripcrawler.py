@@ -133,6 +133,7 @@ class CtripCrawler:
         if self.__total == 0:
             self.exits(4)   #exit for ignored
 
+        self.__warn = 0
         self.__idct = 0
         self.__avgTime = 3.5 if with_return else 1.7
 
@@ -246,6 +247,14 @@ class CtripCrawler:
         sys.exit()
 
     @property
+    def file(self) -> Path | None:
+        '''Get current file path, return None if no file generated'''
+        try:
+            return self.__file
+        except:
+            return None
+
+    @property
     def proxypool(self) -> dict | None:
         '''Get a random proxy from Proxy Pool'''
         try:
@@ -294,9 +303,9 @@ class CtripCrawler:
 
         d_multiairport = True if dcityname == '北京' or dcityname == '上海' or dcityname== '成都' else False
         a_multiairport = True if acityname == '北京' or acityname == '上海' or acityname== '成都' else False
-        try:
-            for route in routeList:
-                legs = route.get('legs')
+        for route in routeList:
+            legs = route.get('legs')
+            try:
                 if len(legs) == 1: # Flights that need to transfer is ignored.
                     #print(legs,end='\n\n')
                     flight = legs[0].get('flight')
@@ -319,16 +328,16 @@ class CtripCrawler:
                     elif not arrivalName:
                         arrivalName = flight.get('arrivalAirportInfo').get('cityName')
                         self.__airportCity[acity] = arrivalName
-                    craftType = flight.get('craftTypeKindDisplayName').strip('型')
+                    craftType = flight.get('craftTypeKindDisplayName', '中型').strip('型')
                     ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
                     price = ticket.get('price').get('price')
                     rate = ticket.get('price').get('rate')
                     datarows.append([flightDate, dow, airlineName, craftType, departureName, arrivalName, 
-                                     departureTime, arrivalTime, price, rate, ])
-                    # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
-        except:
-            print('\tWARN: data error', end = '')
-            return list()
+                                        departureTime, arrivalTime, price, rate, ])
+                        # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
+            except Exception as dataError:
+                print('\tWARN:', dataError, 'at', {flightDate.isoformat()}, end = '')
+                self.__warn += 1
         return datarows
 
 
@@ -342,7 +351,7 @@ class CtripCrawler:
         return time.time()
 
     @staticmethod
-    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), values_only: bool = False, with_return: bool = True) -> bool:
+    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), values_only: bool = False, with_return: bool = True) -> Path:
         wbook = openpyxl.Workbook()
         wsheet = wbook.active
         wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
@@ -376,7 +385,7 @@ class CtripCrawler:
         else:
             wbook.save(path / f'{dcity}-{acity}.xlsx')
         wbook.close
-        return values_only
+        return Path(path / f'{dcity}-{acity}.xlsx')
 
 
     @staticmethod
@@ -395,18 +404,18 @@ class CtripCrawler:
         
         Output Parameters
         -----
-            -Store data or generate list? Where to store? With format or not?
+            - Store data or generate list? Where to store? With format or not?
         
         with_output: `bool`, default: `True`
         
-        path: `Path`, default: `Path()`
+        path: `Path` | `str`, default: `Path("Current Date")`
         
         values_only: `bool`, default: `False`
         
         
         Collect Parameters
         -----
-            -Collect all data or select a range? (matrix-like)
+            - Collect all data or select a range? (matrix-like)
         
         from_city: `str`, default: `None`
         
@@ -418,20 +427,32 @@ class CtripCrawler:
         ignoreNew = set()
 
         '''Initialize running parameters'''
+        path = kwargs.get('path', Path(str(datetime.datetime.now().date())))
+        if not isinstance(path, Path):
+            path = Path(str(path))
+        if not path.exists():
+            Path.mkdir(path)
+        values_only: bool = kwargs.get('values_only', False)
         from_city: str = kwargs.get('from_city', None)
         to_city: str = kwargs.get('to_city', None)
-        path: Path = kwargs.get('path', Path())
-        values_only: bool = kwargs.get('values_only', False)
         if from_city and isinstance(from_city, str):
             try:
                 start_index = self.cityList.index(from_city)
+                for dcity in range(start_index):
+                    for acity in range(dcity, self.__codesum):
+                        if (dcity, acity) not in skipSet:
+                            self.__total -= self.days
             except:
                 start_index = 0
         else:
             start_index = 0
         if to_city and isinstance(to_city, str):
             try:
-                end_index = self.cityList.index(to_city) + 2
+                end_index = self.cityList.index(to_city) + 1
+                for dcity in range(end_index, self.__codesum):
+                    for acity in range(dcity, self.__codesum):
+                        if (dcity, acity) not in skipSet:
+                            self.__total -= self.days
             except:
                 end_index = self.__codesum
         else:
@@ -468,6 +489,9 @@ class CtripCrawler:
                                 print(' ...ignored')
                                 ignoreNew.add((dcityname, acityname))
                                 break
+                            else:
+                                print(f'\tWarn: {collectDate.isoformat()} ignored', end = '')
+                                self.__warn += 1
 
                         '''Get INbound flights data, 3 attempts for ample data'''
                         if self.with_return:
@@ -484,14 +508,18 @@ class CtripCrawler:
                                     print(' ...ignored')
                                     ignoreNew.add((acityname, dcityname))
                                     break
+                                else:
+                                    print(f'\tWarn: {collectDate.isoformat()} ignored', end = '')
+                                    self.__warn += 1
 
                         collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)    #one day forward
                         self.__idct += 1
                         self.__avgTime = (time.time() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
                     else:
                         if with_output:
-                            print(f'\r{dcityname}-{acityname} generated', end = '') 
-                            print('!                         ') if self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return) else print(' and formatted!           ')
+                            print(f'\r{dcityname}-{acityname} generated', end = '')
+                            self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
+                            print('!                         ') if values_only else print(' and formatted!           ')
                             filesum += 1
                         else:
                             print(f'\r{dcityname}-{acityname} collected!                         ') 
@@ -500,23 +528,16 @@ class CtripCrawler:
         if with_output:
             if self.output_new_ignorance(self.ignore_threshold, ignoreNew):
                 print('Ignorance set updated, ', end = '')
-            print(filesum, 'new files in', path.name) if filesum > 1 else print(filesum, 'new file in', path.name)
+            print(filesum, 'routes collected in', path.name) if filesum > 1 else print(filesum, 'route collected in', path.name)
+        if self.__warn:
+            print('Total warning(s):', self.__warn)
 
 
 if __name__ == "__main__":
 
     # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
-    # 初始化
-    print('Initializing...', end='')
-    
-    # 文件夹名设置为当前日期
-    #path = Path('debugging')   #测试用例
-    path = Path(str(datetime.datetime.now().date()))
-    if not path.exists():
-        Path.mkdir(path)
-
-    # 城市列表, 处理表中各城市对的航班（第一天少于3个则忽略）, 分类有: 华北+东北、华东、西南、西北+新疆、中南
+    # 城市列表, 处理表中各城市对的航班 (第一天少于3个则忽略) , 分类有: 华北+东北、华东、西南、西北+新疆、中南
     cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
               'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
               'CTU','CKG','KMG','JHG',
@@ -527,15 +548,14 @@ if __name__ == "__main__":
     ignore_threshold = 3
     ignore_cities = {('BJS', 'LXA'), ('DLC', 'XIY')}
     
-    # 代理API
+    # 代理: 字符串 - 代理网址API / False - 禁用 / 不填 - 使用ProxyPool
     proxyurl = None
 
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
-    # 运行参数: 是否输出文件（否: 生成列表）、存储路径、是否带格式
+    # 运行参数: 是否输出文件 (否: 生成列表) 、存储路径、是否带格式
     crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold, True, proxyurl)
-    #crawler = CtripCrawler(['NKG','CKG','CTU'], datetime.date(2022,2,20), 2, 0, ignore_cities, ignore_threshold, True, proxy = proxyurl)
-    for data in crawler.run(path = path):
+    for data in crawler.run():
         pass
     else:
         print(' - - - COMPLETE AND EXIT - - - ')

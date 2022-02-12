@@ -114,10 +114,10 @@ class CtripSearcher(CtripCrawler):
 
         d_multiairport = True if dcityname == '北京' or dcityname == '上海' or dcityname== '成都' else False
         a_multiairport = True if acityname == '北京' or acityname == '上海' or acityname== '成都' else False
-        try:
-            for route in routeList:
-                flightSegments = route.get('flightSegments')
-                priceList = route.get('priceList')
+        for route in routeList:
+            flightSegments = route.get('flightSegments')
+            priceList = route.get('priceList')
+            try:
                 if len(flightSegments) == 1:    # Flights that need to transfer is ignored.
                     flight = flightSegments[0].get('flightList')[0]
                     if flight.get('operateAirlineCode'):
@@ -146,9 +146,9 @@ class CtripSearcher(CtripCrawler):
                     datarows.append([flightDate, dow, airlineName, craftType, departureName, arrivalName, 
                                      departureTime, arrivalTime, price, rate, ])
                     # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
-        except:
-            print('\tWARN: data process error', end = '')
-            return list()
+            except Exception as dataError:
+                print('\tWARN:', dataError, 'at', {flightDate.isoformat()}, end = '')
+                self.__warn += 1
         return datarows
 
 if __name__ == "__main__":
