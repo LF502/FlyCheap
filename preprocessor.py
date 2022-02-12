@@ -10,9 +10,9 @@ class Preprocessor:
     
     Parameters
     -----
-    path: `Path` where to export excel
+    path: `Path` | `str` where to export excel
     
-            default: `Path()`, current folder
+            default: `Path("Current Date")`
     
     collect_date: `datetime.date` date of collection
     
@@ -22,7 +22,7 @@ class Preprocessor:
     
             default: `False`, raw keywords
     
-    filename: `str` name of export file
+    file_name: `str` name of export file
     
             default: `the last city tuple in Chinese` or `excel name`
     
@@ -130,30 +130,33 @@ class Preprocessor:
     # {year: [(ordinal, holiday duration), ...], ...}   --all in int, Spring Festival duration is 0
 
     def __init__(self, **kwargs) -> None:
-        self.__path: Path = kwargs.get('path', Path())
-        self.__filename: str = kwargs.get('filename', '')
+        self.__path = kwargs.get('path', Path(str(datetime.datetime.now().date())))
+        if not isinstance(self.__path, Path):
+            self.__path = Path(str(self.__path))
+        if not self.__path.exists():
+            raise ValueError(self.__path.name, 'does not exist!')
+        self.__filename: str = kwargs.get('file_name', '')
         self.header: list[str] = kwargs.get('chinese_header', False)
         self.__collDate: datetime.date = kwargs.get('collect_date', datetime.datetime.now().date())
         try:
+            cols = [0, 1, 2, 3, 4, 5, 6, 9]
             if kwargs.get('excel', False):
-                self.data = pandas.read_excel(kwargs.get('excel')).iloc[ : , [0, 1, 2, 3, 4, 5, 6, 9]]
+                self.data = pandas.read_excel(kwargs.get('excel')).iloc[ : , cols]
                 self.__filename: str = kwargs.get('excel').name
                 try:
                     self.__collDate = datetime.datetime.fromisoformat(self.__path.parts[0])
                 except:
                     self.__collDate = kwargs.get('collect_date', datetime.datetime.now().date())
             elif kwargs.get('list', False):
-                self.data = pandas.DataFrame(kwargs.get('list'), columns =
-                            ('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时间', '到达时间', '价格', '折扣'))
-                self.data = self.data.droplevel(('到达时间', '价格'), 'columns')
+                header = ('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣')
+                self.data = pandas.DataFrame(kwargs.get('list'), columns = header)
+                self.data = self.data.iloc[ : , cols]
             elif kwargs.get('dict', False):
                 self.data = pandas.DataFrame(kwargs.get('dict'))
             else:
-                print('  ---------------------------  ')
-                print('  WARNING: No data is loaded!  ')
-                print('  ---------------------------  ')
+                raise ValueError('No data!')
         except:
-            raise ValueError('')
+            raise ValueError('No data!')
         self.__collDate: int = self.__collDate.toordinal()
 
     @property
@@ -429,7 +432,7 @@ class Preprocessor:
         if self.__filename == '':
             i = i[:2] if '北京' in i or '上海' in i or '成都' in i else i
             j = j[:2] if '北京' in j or '上海' in j or '成都' in j else j
-            self.__filename = i + j + '_预处理.xlsx'
+            self.__filename = i + '~' + j + '_预处理.xlsx'
         else:
             self.__filename = self.__filename.replace('.xlsx', '_preproc.xlsx')
 
