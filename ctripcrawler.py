@@ -192,7 +192,8 @@ class CtripCrawler:
                         ('KMG','NNG'),('KWE','CTU'),('KWE','CSX'),('CKG','KWE'),('CTU','CKG'),('CKG','XIY'),
                         ('LHW','XNN'),('XNN','INC'),('INC','LHW'),('HET','INC'),('HET','TYN'),('HET','SJW'),
                         ('JJN','XMN'),('JJN','FOC'),('JJN','ZHA'),('SZX','JJN'),('SWA','ZHA'),('FOC','ZHA'),
-                        ('HAK','SYX'),('HRB','HLD'),('SZX','ZHA'),('FOC','SYX'),('FOC','SZX'),('FOC','XMN')}
+                        ('HAK','SYX'),('HRB','HLD'),('SZX','ZHA'),('FOC','SYX'),('FOC','SZX'),('FOC','XMN'),
+                        ('HFE','CSX'),('CGQ','TSN'),('TSN','JJN'),}
         if self.ignore_threshold >= 3:
             ignoreExt = {('LXA','ZHA'),('LXA','SZX'),('LXA','JJN'),('CTU','SWA'),('SHA','LXA'),('TSN','LXA'),
                         ('LXA','XMN'),('LXA','CZX'),('LXA','WUX'),('LXA','HLD'),('LXA','JHG'),('LXA','SWA'),
@@ -218,11 +219,17 @@ class CtripCrawler:
                         ('HRB','ZHA'),('SWA','SYX'),('CZX','LHW'),('TSN','JHG'),('LHW','HAK'),('KMG','ZHA'),
                         ('HLD','TSN'),('XIY','JJN'),('FOC','HAK'),('JHG','FOC'),('HLD','CKG'),('HLD','SYX'),
                         ('HLD','SZX'),('HRB','SWA'),('WUX','URC'),('DLC','SYX'),('CZX','XMN'),('CZX','FOC'),
-                        ('HRB','LXA'),('TSN','JJN'),('TAO','URC'),('TSN','LHW'),('CZX','ZHA'),('HLD','WUX'),
+                        ('HRB','LXA'),('TAO','URC'),('TSN','LHW'),('CZX','ZHA'),('HLD','WUX'),('CGQ','CZX'),
                         ('CGO','JHG'),('LHW','ZHA'),('DLC','WUX'),('CKG','ZHA'),('WUH','ZHA'),('HLD','CTU'),
                         ('CZX','XIY'),('WUX','JJN'),('HLD','CZX'),('CZX','SWA'),('JJN','SWA'),('URC','SYX'),
                         ('WUX','SYX'),('HGH','ZHA'),('HLD','JJN'),('CZX','HAK'),('HRB','URC'),('CZX','URC'),
-                        ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),('BJS','ZHA'),}
+                        ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),('HRB','INC'),('KMG','INC'),
+                        ('XMN','INC'),('HFE','XIY'),('SJW','SZX'),('TSN','SHE'),('CGQ','INC'),('SJW','HFE'),
+                        ('XMN','LHW'),('SJW','WUH'),('SZX','INC'),('INC','WUH'),('SYX','INC'),('SJW','TAO'),
+                        ('CGQ','LHW'),('SJW','CZX'),('SJW','WUX'),('SJW','INC'),('INC','FOC'),('SZX','CSX'),
+                        ('SJW','CSX'),('HFE','INC'),('HAK','INC'),('CZX','INC'),('HFE','FOC'),('TSN','HFE'),
+                        ('SHE','INC'),('CGQ','URC'),('HFE','LHW'),('CZX','CSX'),('CSX','CGO'),('TSN','INC'),
+                        ('WUX','INC'),('INC','DLC'),('SJW','DLC'),('SHE','LHW')}
             ignoreSet = ignoreSet.union(ignoreExt)
   
         skipSet = set()
@@ -344,11 +351,11 @@ class CtripCrawler:
 
     def show_progress(self, dcity: str, acity: str, collectDate: datetime.date) -> float:
         '''Progress indicator with a current time (float) return'''
-        print('\r{}% >> '.format(int(self.__idct / self.__total * 100)), end='')
         m, s = divmod(int((self.__total - self.__idct) * self.__avgTime), 60)
-        h, m = divmod(m, 60)    #show est. remaining process time: eta
-        print('eta {0:02d}:{1:02d}:{2:02d} >> '.format(h, m, s), end='')
-        print(dcity + '-' + acity + ': ' + collectDate.isoformat(), end='')   #current processing flights
+        h, m = divmod(m, 60)
+        print('\r{}% >>'.format(int(self.__idct / self.__total * 100)), 
+              'eta {0:02d}:{1:02d}:{2:02d} >>'.format(h, m, s), 
+              dcity + '-' + acity + ': ', end = collectDate.isoformat())
         return time.time()
 
     @staticmethod
@@ -392,7 +399,7 @@ class CtripCrawler:
     @staticmethod
     def output_new_ignorance(ignore_threshold: int = 3, ignoreNew: set = set()) -> bool:
         if len(ignoreNew) > 0:
-            with open('CityTuples_FlightsLessThan{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
+            with open('IgnoredOrError_{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
                 updates.write(str(ignoreNew) + '\n')
             return True
         else:
@@ -432,6 +439,8 @@ class CtripCrawler:
         if not isinstance(path, Path):
             path = Path(str(path))
         if not path.exists():
+            if not path.parent.exists():
+                Path.mkdir(path.parent)
             Path.mkdir(path)
         values_only: bool = kwargs.get('values_only', False)
         from_city: str = kwargs.get('from_city', None)
@@ -478,39 +487,40 @@ class CtripCrawler:
 
                         '''Get OUTbound flights data, 3 attempts for ample data'''
                         for j in range(3):
-                            dataLen = len(datarows)
+                            data_diff = len(datarows)
                             datarows.extend(self.collector(collectDate, dcityname, acityname))
-                            if len(datarows) - dataLen >= self.ignore_threshold:
+                            data_diff = len(datarows) - data_diff
+                            if data_diff >= self.ignore_threshold:
                                 break
-                            elif i != 0 and len(datarows) - dataLen > 0:
+                            elif i != 0 and data_diff > 0:
                                 break
                         else:
-                            if i == 0 and len(datarows) < self.ignore_threshold:
+                            if i == 0 and data_diff < self.ignore_threshold:
                                 self.__total -= self.days # In the first round, ignore the cities whose flight data is less than 3.
                                 print(' ...ignored')
                                 ignoreNew.add((dcityname, acityname))
                                 break
-                            else:
-                                print(f'\tWarn: {collectDate.isoformat()} ignored', end = '')
+                            elif data_diff < self.ignore_threshold:
+                                print(f'\tWarn: few data on {collectDate.isoformat()} ', end = '')
                                 self.__warn += 1
 
                         '''Get INbound flights data, 3 attempts for ample data'''
                         if self.with_return:
                             for j in range(3):
-                                dataLen = len(datarows)
+                                data_diff = len(datarows)
                                 datarows.extend(self.collector(collectDate, acityname, dcityname))
-                                if len(datarows) - dataLen >= self.ignore_threshold:
+                                if data_diff >= self.ignore_threshold:
                                     break
-                                elif i != 0 and len(datarows) - dataLen > 0:
+                                elif i != 0 and data_diff > 0:
                                     break
                             else:
-                                if i == 0 and len(datarows) - dataLen < self.ignore_threshold:
+                                if i == 0 and data_diff < self.ignore_threshold:
                                     self.__total -= self.days # In the first round, ignore the cities whose flight data is less than 3.
                                     print(' ...ignored')
                                     ignoreNew.add((acityname, dcityname))
                                     break
-                                else:
-                                    print(f'\tWarn: {collectDate.isoformat()} ignored', end = '')
+                                elif data_diff < self.ignore_threshold:
+                                    print(f'\tWarn: few data on {collectDate.isoformat()}', end = '')
                                     self.__warn += 1
 
                         collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)    #one day forward

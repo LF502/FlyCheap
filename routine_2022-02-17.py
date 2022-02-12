@@ -3,8 +3,11 @@ from preprocessor import Preprocessor
 from zipfile import ZipFile
 from datetime import date
 from pathlib import Path
+from __init__ import Log
+import sys
 
 if __name__ == "__main__":
+    
     cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
               'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
               'CTU','CKG','KMG','JHG',
@@ -12,9 +15,11 @@ if __name__ == "__main__":
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     flightDate = date(2022, 2, 17)
     ignore_threshold = 3
-    ignore_cities = {('BJS', 'LXA'), ('DLC', 'XIY')}
-    crawler = CtripCrawler(cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
+    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')}
     path = None
+    
+    sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
+    crawler = CtripCrawler(cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
     
     for data in crawler.run():
         if not path:
@@ -28,3 +33,5 @@ if __name__ == "__main__":
             preproc.write(file, file.name)
         elif file.match('*.xlsx'):
             orig.write(file, file.name)
+    orig.close
+    preproc.close
