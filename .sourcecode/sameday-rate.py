@@ -56,7 +56,6 @@ def merge() -> None:
     print('\nMerging...')
     wb = openpyxl.Workbook()
     for name in __sdict.keys():
-        print('\r' + name, end = ' data appending...')
         ws = wb.create_sheet(name)
         ws.column_dimensions['A'].width = 11
         __title[name].sort()
@@ -72,6 +71,7 @@ def merge() -> None:
                 else:
                     row.append(None)
             ws.append(row)
+    print('Saving...')
     wb.remove(wb.active)
     wb.save(f"route-day-rate.xlsx")
     wb.close
