@@ -104,6 +104,7 @@ class CtripCrawler:
 
         self.cityList = cityList
         self.flightDate = flightDate
+        self.first_date = flightDate.isoformat()
 
         self.days = days
         self.day_limit = day_limit
@@ -408,7 +409,7 @@ class CtripCrawler:
         
         with_output: `bool`, default: `True`
         
-        path: `Path` | `str`, default: `Path("Current Date")`
+        path: `Path` | `str`, default: `Path("First Flight Date" / "Current Date")`
         
         values_only: `bool`, default: `False`
         
@@ -427,7 +428,7 @@ class CtripCrawler:
         ignoreNew = set()
 
         '''Initialize running parameters'''
-        path = kwargs.get('path', Path(str(datetime.datetime.now().date())))
+        path = kwargs.get('path', Path(self.first_date) / Path(str(datetime.datetime.now().date())))
         if not isinstance(path, Path):
             path = Path(str(path))
         if not path.exists():

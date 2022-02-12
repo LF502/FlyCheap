@@ -12,7 +12,6 @@ class Preprocessor:
     -----
     path: `Path` | `str` where to export excel
     
-            default: `Path("Current Date")`
     
     collect_date: `datetime.date` date of collection
     
@@ -129,8 +128,8 @@ class Preprocessor:
     __holidays = dict()
     # {year: [(ordinal, holiday duration), ...], ...}   --all in int, Spring Festival duration is 0
 
-    def __init__(self, **kwargs) -> None:
-        self.__path = kwargs.get('path', Path(str(datetime.datetime.now().date())))
+    def __init__(self, path: Path, **kwargs) -> None:
+        self.__path = path
         if not isinstance(self.__path, Path):
             self.__path = Path(str(self.__path))
         if not self.__path.exists():
@@ -144,7 +143,7 @@ class Preprocessor:
                 self.data = pandas.read_excel(kwargs.get('excel')).iloc[ : , cols]
                 self.__filename: str = kwargs.get('excel').name
                 try:
-                    self.__collDate = datetime.datetime.fromisoformat(self.__path.parts[0])
+                    self.__collDate = datetime.datetime.fromisoformat(self.__path.name)
                 except:
                     self.__collDate = kwargs.get('collect_date', datetime.datetime.now().date())
             elif kwargs.get('list', False):
@@ -498,10 +497,11 @@ class Preprocessor:
 
 if __name__ == '__main__':
 
+    first_date = "2022-02-17"
     folders = ['2022-01-28', ]
     
-    for strings in folders:
-        path = Path(strings)
+    for folder in folders:
+        path = Path(first_date) / Path(folder)
         for file in path.iterdir():
             if file.match('*.xlsx') and 'preproc' not in file.name:
                 print('\r' + file.name, 'excel initializing...', end = '')
@@ -509,4 +509,4 @@ if __name__ == '__main__':
                 print('\r' + file.name, 'preprocess running...', end = '')
                 debugging.run()
                 print('\r' + file.name, 'preprocess completed.', end = '')
-        print(f'\n{strings} finished at', datetime.datetime.now().time().isoformat('seconds'))
+        print(f'\n{folder} finished at', datetime.datetime.now().time().isoformat('seconds'))

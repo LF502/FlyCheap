@@ -5,7 +5,6 @@ from datetime import date
 from pathlib import Path
 
 if __name__ == "__main__":
-    
     cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
               'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
               'CTU','CKG','KMG','JHG',
@@ -22,8 +21,8 @@ if __name__ == "__main__":
             path = crawler.file.parent
         Preprocessor(list = data, path = path, file_name = crawler.file.name).run()
     
-    orig = ZipFile(path / Path(f"orig.zip"), "a")
-    preproc = ZipFile(path / Path(f"preproc.zip"), "a")
+    orig = ZipFile(path / Path("orig.zip"), "a")
+    preproc = ZipFile(path / Path("preproc.zip"), "a")
     for file in path.iterdir():
         if file.match('*_preproc.xlsx') or file.match('*_预处理.xlsx'):
             preproc.write(file, file.name)
