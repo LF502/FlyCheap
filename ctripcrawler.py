@@ -390,19 +390,56 @@ class CtripCrawler:
 
 
     def run(self, with_output: bool = True, **kwargs) -> Generator:
-        '''Collect all data, output and yield data of city tuple flights collected in list.'''
+        '''
+        Collect all data, output and yield data of city tuple flights collected in list.
+        
+        Output Parameters
+        -----
+            -Store data or generate list? Where to store? With format or not?
+        
+        with_output: `bool`, default: `True`
+        
+        path: `Path`, default: `Path()`
+        
+        values_only: `bool`, default: `False`
+        
+        
+        Collect Parameters
+        -----
+            -Collect all data or select a range? (matrix-like)
+        
+        from_city: `str`, default: `None`
+        
+        to_city: `str`, default: `None`
+        '''
         print('\rGetting data...')
         skipSet = self.skip
         filesum = 0
         ignoreNew = set()
-        if with_output:
-            path: Path = kwargs.get('path', Path())
-            values_only: bool = kwargs.get('values_only', False)
-        else:
-            path = Path()
 
-        for dcity in range(self.__codesum):
-            for acity in range(dcity,self.__codesum):
+        '''Initialize running parameters'''
+        from_city: str = kwargs.get('from_city', None)
+        to_city: str = kwargs.get('to_city', None)
+        path: Path = kwargs.get('path', Path())
+        values_only: bool = kwargs.get('values_only', False)
+        if from_city and isinstance(from_city, str):
+            try:
+                start_index = self.cityList.index(from_city)
+            except:
+                start_index = 0
+        else:
+            start_index = 0
+        if to_city and isinstance(to_city, str):
+            try:
+                end_index = self.cityList.index(to_city) + 2
+            except:
+                end_index = self.__codesum
+        else:
+            end_index = self.__codesum
+
+        '''Data collecting controller'''
+        for dcity in range(start_index, end_index):
+            for acity in range(dcity, self.__codesum):
                 if acity == dcity:
                     continue    # Same city tuple should not be processed.
                 if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
@@ -488,7 +525,7 @@ if __name__ == "__main__":
     
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
-    ignore_cities = None
+    ignore_cities = {('BJS', 'LXA'), ('DLC', 'XIY')}
     
     # 代理API
     proxyurl = None
