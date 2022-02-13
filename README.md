@@ -85,17 +85,15 @@ All folders' names are the data collecting date. A very beginning project :D
 
 TBC
 
-## 自动化任务（Routine）
+## 其他功能
 
-### 功能
+### 自动化任务（Routine）
 
 - 可实现多机分配范围后同时爬取
 - 生成原数据表格后，直接传入数据进行预处理（无需再读取表格）
 - 文件分类打包
 
-## 爬取记录（Log）
-
-### 功能
+### 爬取记录（Log）
 
 - 记录终端输出的提示文字及输出时间
 - 记录忽略或异常的城市对

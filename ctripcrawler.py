@@ -129,7 +129,7 @@ class CtripCrawler:
                     self.days -= total - self.day_limit
         if self.days <= 0:
             self.exits(3) #exit for day limit error
-        self.__total = self.__codesum * (self.__codesum - 1) * self.days / 2
+        self.__total = self.__codesum **2 * self.days / 2
 
         if self.__total == 0:
             self.exits(4)   #exit for ignored
@@ -238,8 +238,10 @@ class CtripCrawler:
         for i in range(self.__codesum):
             for j in range(i, self.__codesum):
                 if i == j:
-                    continue
-                if (self.cityList[i], self.cityList[j]) in ignoreSet or (self.cityList[j], self.cityList[i]) in ignoreSet or self.cityList[i] == self.cityList[j]:
+                    skipSet.add((i, j))
+                if self.cityList[i] == self.cityList[j] or \
+                    (self.cityList[i], self.cityList[j]) in ignoreSet or \
+                    (self.cityList[j], self.cityList[i]) in ignoreSet:
                     # If the city tuple is the same or found in the set, it shouldn't be processed.
                     skipSet.add((i, j))
         self.__total -= self.days * len(skipSet)
@@ -336,7 +338,8 @@ class CtripCrawler:
                     elif not arrivalName:
                         arrivalName = flight.get('arrivalAirportInfo').get('cityName')
                         self.__airportCity[acity] = arrivalName
-                    craftType = flight.get('craftTypeKindDisplayName', '中型').strip('型')
+                    craftType = flight.get('craftTypeKindDisplayName')
+                    craftType = craftType.strip('型') if craftType else "中"
                     ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
                     price = ticket.get('price').get('price')
                     rate = ticket.get('price').get('rate')
@@ -344,7 +347,7 @@ class CtripCrawler:
                                         departureTime, arrivalTime, price, rate, ])
                         # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
             except Exception as dataError:
-                print('\tWARN:', dataError, 'at', {flightDate.isoformat()}, end = '')
+                print('\tWARN:', dataError, 'at', flightDate.isoformat(), end = '')
                 self.__warn += 1
         return datarows
 
@@ -412,7 +415,9 @@ class CtripCrawler:
         
         Output Parameters
         -----
-            - Store data or generate list? Where to store? With format or not?
+        - Store data or generate list? 
+        - Where to store? 
+        - With format or not?
         
         with_output: `bool`, default: `True`
         
@@ -423,7 +428,7 @@ class CtripCrawler:
         
         Collect Parameters
         -----
-            - Collect all data or select a range? (matrix-like)
+        - Collect all data or select a range? (matrix-like)
         
         from_city: `str`, default: `None`
         
@@ -471,70 +476,69 @@ class CtripCrawler:
         '''Data collecting controller'''
         for dcity in range(start_index, end_index):
             for acity in range(dcity, self.__codesum):
-                if acity == dcity:
-                    continue    # Same city tuple should not be processed.
+                if (dcity, acity) in skipSet:
+                    continue    # If the city tuple key / coordinate is not found, process.
                 if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
                     print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
                     self.__total -= self.days
                     continue    # Already processed.
-                if (dcity, acity) not in skipSet:   # If the city tuple key / coordinate is not found, process.
-                    collectDate = self.flightDate   #reset
-                    datarows = []
-                    for i in range(self.days):
-                        dcityname = self.cityList[dcity]
-                        acityname = self.cityList[acity]
-                        currTime = self.show_progress(dcityname, acityname, collectDate)
+                collectDate = self.flightDate   #reset
+                datarows = []
+                for i in range(self.days):
+                    dcityname = self.cityList[dcity]
+                    acityname = self.cityList[acity]
+                    currTime = self.show_progress(dcityname, acityname, collectDate)
 
-                        '''Get OUTbound flights data, 3 attempts for ample data'''
+                    '''Get OUTbound flights data, 3 attempts for ample data'''
+                    for j in range(3):
+                        data_diff = len(datarows)
+                        datarows.extend(self.collector(collectDate, dcityname, acityname))
+                        data_diff = len(datarows) - data_diff
+                        if data_diff >= self.ignore_threshold:
+                            break
+                        elif i != 0 and data_diff > 0:
+                            break
+                    else:
+                        if i == 0 and data_diff < self.ignore_threshold:
+                            self.__total -= self.days
+                            print(' ...ignored')
+                            ignoreNew.add((dcityname, acityname))
+                            break
+                        elif data_diff < self.ignore_threshold:
+                            print('\tWarn: few data on ', end = collectDate.isoformat())
+                            self.__warn += 1
+
+                    '''Get INbound flights data, 3 attempts for ample data'''
+                    if self.with_return:
                         for j in range(3):
                             data_diff = len(datarows)
-                            datarows.extend(self.collector(collectDate, dcityname, acityname))
-                            data_diff = len(datarows) - data_diff
+                            datarows.extend(self.collector(collectDate, acityname, dcityname))
                             if data_diff >= self.ignore_threshold:
                                 break
                             elif i != 0 and data_diff > 0:
                                 break
                         else:
                             if i == 0 and data_diff < self.ignore_threshold:
-                                self.__total -= self.days # In the first round, ignore the cities whose flight data is less than 3.
+                                self.__total -= self.days
                                 print(' ...ignored')
-                                ignoreNew.add((dcityname, acityname))
+                                ignoreNew.add((acityname, dcityname))
                                 break
                             elif data_diff < self.ignore_threshold:
-                                print(f'\tWarn: few data on {collectDate.isoformat()} ', end = '')
+                                print('\tWarn: few data on ', end = collectDate.isoformat())
                                 self.__warn += 1
 
-                        '''Get INbound flights data, 3 attempts for ample data'''
-                        if self.with_return:
-                            for j in range(3):
-                                data_diff = len(datarows)
-                                datarows.extend(self.collector(collectDate, acityname, dcityname))
-                                if data_diff >= self.ignore_threshold:
-                                    break
-                                elif i != 0 and data_diff > 0:
-                                    break
-                            else:
-                                if i == 0 and data_diff < self.ignore_threshold:
-                                    self.__total -= self.days # In the first round, ignore the cities whose flight data is less than 3.
-                                    print(' ...ignored')
-                                    ignoreNew.add((acityname, dcityname))
-                                    break
-                                elif data_diff < self.ignore_threshold:
-                                    print(f'\tWarn: few data on {collectDate.isoformat()}', end = '')
-                                    self.__warn += 1
-
-                        collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)    #one day forward
-                        self.__idct += 1
-                        self.__avgTime = (time.time() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
+                    collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
+                    self.__idct += 1
+                    self.__avgTime = (time.time() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
+                else:
+                    if with_output:
+                        print(f'\r{dcityname}-{acityname} generated', end = '')
+                        self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
+                        print('!                         ') if values_only else print(' and formatted!           ')
+                        filesum += 1
                     else:
-                        if with_output:
-                            print(f'\r{dcityname}-{acityname} generated', end = '')
-                            self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
-                            print('!                         ') if values_only else print(' and formatted!           ')
-                            filesum += 1
-                        else:
-                            print(f'\r{dcityname}-{acityname} collected!                         ') 
-                        yield datarows
+                        print(f'\r{dcityname}-{acityname} collected!                         ') 
+                    yield datarows
 
         if with_output:
             if self.output_new_ignorance(self.ignore_threshold, ignoreNew):
