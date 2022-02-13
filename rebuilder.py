@@ -1,5 +1,3 @@
-from doctest import master
-from typing import Tuple
 import pandas
 import openpyxl
 from datetime import datetime
@@ -12,7 +10,7 @@ class Rebuilder():
     -----
     Rebuild all data by filtering factors that influence ticket rate.
     
-    Here are 7 significant factors can be processed by class methods:
+    Here are 7 significant factors in class property:
     - `airline`: Airlines' rates, competition and flight time
     - `city`: City class, location and airport throughput
     - `buyday`: Date of purchase 
@@ -29,7 +27,7 @@ class Rebuilder():
     - `airline`, `flyday`, `time`, `type`, `week`
     
     Methods using preprocessed data: 
-    - `city`, `buyday`
+    - `buyday`, `city`
     
     Parameters
     -----
@@ -43,9 +41,8 @@ class Rebuilder():
     
     '''
     def __init__(self, root: Path = Path(), day_limit: int = 0) -> None:
-        self.root = root
         self.day_limit = day_limit
-        self.path = Path()
+        self.__root = root
         self.__airportCity = {
             'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都',
             'SZX':'深圳','KMG':'昆明','XIY':'西安','CKG':'重庆',
@@ -75,35 +72,33 @@ class Rebuilder():
             'LZH':'柳州','XIC':'西昌','TCZ':'腾冲',}
         self.__title = {
             "airline": {"airlines": [], "dates": [], 
-                        "hours": (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 
-                                  16, 17, 18, 19, 20, 21, 22, 23, 24)}, 
+                        "hours": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 
+                                  16, 17, 18, 19, 20, 21, 22, 23, 24]}, 
             "city": {}, 
             "buyday": [], 
             "flyday": {}, 
             "time": ("航线", "平均折扣", 5, 6, 7, 8, 9, 10, 11, 12, 
                      13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24),  
-            "type": ("航线", "小型", "日均数量", "中型", 
-                     "日均数量", "大型", "日均数量", "平均折扣"), 
+            "type": ("航线", "小型折扣", "日均数量", "中型折扣", 
+                     "日均数量", "大型折扣", "日均数量", "平均折扣", 
+                     "小型", "中型", "大型"), 
             "week": {}}
         
         self.master = {"airline": {}, "city": {}, "buyday": {}, 
                        "flyday": {}, "time": {}, "type": {}, "week": {}}
         
-        self.__collDate = datetime.today().toordinal()
-        
         self.orig: list[Path] = []
         self.preproc: list[Path] = []
-        self.__unlink = False
+        self.__paths: list[Path] = []
+        
+        self.__warn = 0
     
     def append(self, file: Path) -> Path:
         '''Append data to rebuilder for further processes'''
-        self.path = file.parent
         try:
-            self.__collDate = datetime.fromisoformat(self.path).toordinal()
+            datetime.fromisoformat(file.parent.name)
         except:
-            raise ValueError("Not a standard path name of collecting date!")
-        if not isinstance(file, Path):
-            raise ValueError("Not a pathlib.Path!")
+            raise ValueError("File not in a standard path name of collecting date!")
         if file.match("*_preproc.xlsx") or file.match("*_预处理.xlsx"):
             self.preproc.append(file)
         elif file.match("*.xlsx"):
@@ -112,57 +107,62 @@ class Rebuilder():
             raise ValueError("Not an excel file!")
         return file
     
-    def zip(self, path: list[Path] = None) -> None:
+    def zip(self, path: Path) -> None:
         '''
         Append data from zip file(s) to processes
         
         return `True, True` if both orig.zip and preproc.zip are loaded.
         '''
-        if not path:
-            path = self.root.iterdir()
-        for folder in path:
-            try:
-                self.__collDate = datetime.fromisoformat(folder.name).toordinal()
-            except:
-                raise ValueError("Not a standard path name of collecting date!")
-            try:
-                zip = ZipFile(Path(folder / Path("orig.zip")), "r")
-                zip.extractall(folder)
-                zip.close
-                self.__unlink = True
-            except:
-                self.__unlink = False
-            try:
-                zip = ZipFile(Path(folder / Path("preproc.zip")), "r")
-                zip.extractall(folder)
-                zip.close
-                self.__unlink = True
-            except:
-                if not self.__unlink:
-                    self.__unlink = False
-            for file in folder.iterdir():
-                if file.match("*_preproc.xlsx") or file.match("*_预处理.xlsx"):
-                    self.preproc.append(file)
-                elif file.match("*.xlsx"):
-                    self.orig.append(file)
+        try:
+            datetime.fromisoformat(path.name)
+        except:
+            raise ValueError("Not a standard path name of collecting date!")
+        try:
+            zip = ZipFile(Path(path / Path("orig.zip")), "r")
+            zip.extractall(path)
+            zip.close
+        except:
+            print("Warn: orig.zip not found in", path.name)
+            self.__warn += 1
+        try:
+            zip = ZipFile(Path(path / Path("preproc.zip")), "r")
+            zip.extractall(path)
+            zip.close
+        except:
+            print("Warn: preproc.zip not found in", path.name)
+            self.__warn += 1
+            
+        for file in path.iterdir():
+            if file.match("*_preproc.xlsx") or file.match("*_预处理.xlsx"):
+                self.preproc.append(file)
+            elif file.match("*.xlsx"):
+                self.orig.append(file)
+        if path not in self.__paths:
+            self.__paths.append(path)
     
-    def reset(self) -> None:
-        '''Clear all data in the process list'''
+    def reset(self, unlink: bool = True) -> None:
+        '''- Clear all data in the process list
+        - Unlink excels zip file extracted if unlink == `True`'''
+        if unlink:
+            for path in self.__paths:
+                for file in path.iterdir():
+                    if file in self.orig or file in self.preproc:
+                        file.unlink()
         self.orig.clear()
         self.preproc.clear()
-        if self.__unlink:
-            for file in self.path.iterdir():
-                if file.match("*.xlsx"):
-                    file.unlink()
-        self.__unlink = False
     
-    
+    @property
     def airline(self) -> tuple[str, openpyxl.Workbook]:
         dict = self.master["airline"]
+        idct = 0
+        total = len(self.orig)
         for file in self.orig:
+            idct += 1
+            print("\rairline data >>", int(idct / total * 100), end = "%")
+            collDate = datetime.fromisoformat(file.parent.name).toordinal()
+            data = pandas.read_excel(file).iloc[ : , [0, 2, 4, 5, 6, 9]]
             for item in data.values:
-                data = pandas.read_excel(file).iloc[ : , [0, 2, 4, 5, 6, 9]]
-                days = item[0].toordinal() - self.__collDate
+                days = item[0].toordinal() - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
                 name = item[2][:2] + "-" + item[3][:2]
@@ -189,9 +189,10 @@ class Rebuilder():
                     dict[name] = {item[1]: {"rate": item[5], "count": 1, 
                                             item[4].hour: {"rate": item[5], "count": 1},},
                                   "counts": 1, "rates": item[5],}
-        
+        print()
         self.master["airline"] = dict
-        return "airline", self.__excel_format(self.__airline(dict, self.__title["airline"]))
+        return "airline", self.__excel_format(self.__airline(dict, self.__title["airline"]), 
+                                              B_width = 12)
     
     @staticmethod
     def __airline(dict: dict, title: dict) -> openpyxl.Workbook:
@@ -206,7 +207,11 @@ class Rebuilder():
         
         ws = wb["航线航司 - 每日航班密度"]
         ws.append(["航线", "运营航司数量"] + title["airlines"])
+        idct = 0
+        total = len(dict)
         for name in dict.keys():
+            idct += 1
+            print("\rairline sheet(1/4) >>", int(idct / total * 100), end = "%")
             row = [name, len(dict[name]) - 2]
             for airline in title["airlines"]:
                 if dict[name].get(airline):
@@ -216,9 +221,13 @@ class Rebuilder():
             ws.append(row)
         
         wsd = wb["航线时刻 - 时刻航班密度"]
+        wsd.append(["航线", "运营航司数量"] + title["hours"])
         wsc = wb["航线时刻 - 航司竞争"]
         wsc.append(["航线", "运营航司数量"] + title["hours"])
+        idct = 0
         for name in dict.keys():
+            idct += 1
+            print("\rairline sheet(2/4) >>", int(idct / total * 100), end = "%")
             rowc = [name, len(dict[name]) - 2]
             rowd = [name, len(dict[name]) - 2]
             for hour in title["hours"]:
@@ -226,12 +235,12 @@ class Rebuilder():
                 density = 0
                 for airline in title["airlines"]:
                     if dict[name].get(airline):
-                        if dict[name][airline]["time"].get(hour):
+                        if dict[name][airline].get(hour):
                             count += 1
-                            density += dict[name][airline]["time"].get(hour)
+                            density += dict[name][airline][hour]["count"]
                 if count:
                     rowc.append(count)
-                    rowd.append(density)
+                    rowd.append(density / len(title["dates"]))
                 else:
                     rowc.append(None)
                     rowd.append(None)
@@ -240,7 +249,10 @@ class Rebuilder():
         
         ws = wb["航线航司 - 机票折扣总览"]
         ws.append(["航线", "平均折扣"] + title["airlines"])
+        idct = 0
         for name in dict.keys():
+            idct += 1
+            print("\rairline sheet(3/4) >>", int(idct / total * 100), end = "%")
             row = [name, dict[name]["rates"] / dict[name]["counts"]]
             for airline in title["airlines"]:
                 if dict[name].get(airline):
@@ -249,10 +261,14 @@ class Rebuilder():
                     row.append(None)
             ws.append(row)
         
+        idct = 0
+        total *= len(title["airlines"])
         for airline in title["airlines"]:
             ws = wb[airline]
             ws.append(["航线", "平均折扣"] + title["hours"])
             for name in dict.keys():
+                idct += 1
+                print("\rairline sheet(4/4) >>", int(idct / total * 100), end = "%")
                 if not dict[name].get(airline):
                     continue
                 row = [name, dict[name][airline]["rate"] / dict[name][airline]["count"]]
@@ -263,63 +279,56 @@ class Rebuilder():
                     else:
                         row.append(None)
                 ws.append(row)
-        
         return wb
     
-    def city(self) -> tuple[str, openpyxl.Workbook]:
-        dict = self.master["city"]
-        for file in self.preproc:
-            for item in data.values:
-                days = item[0].toordinal() - self.__collDate
-                if self.day_limit and days > self.day_limit:
-                    continue
-                name = item[1][:2] + "-" + item[2][:2]
-        
-        self.master["city"] = dict
-        return "city"
-    
+    @property
     def buyday(self) -> tuple[str, openpyxl.Workbook]:
         dict = self.master["buyday"]
-        min_day = 0
-        max_day = 1
+        min_day = self.day_limit if self.day_limit else 90
+        max_day = 0
+        idct = 0
+        total = len(self.preproc)
         for file in self.preproc:
-            cols = [1, 3, 11, 12, 13, 14, 19]
+            idct += 1
+            print("\rbuyday data >>", int(idct / total * 100), end = "%")
+            cols = [0, 2, 10, 11, 12, 13, 18]
             data = pandas.read_excel(file, index_col = 0).iloc[ : , cols]
             data.sort_index(inplace = True)
             name = file.name.split('~')
             dcity = self.__airportCity.get(name[0])
-            acity = self.__airportCity.get(name[1].strip('_preproc.xlsx'))
+            acity = self.__airportCity.get(name[1].split('_', 1)[0])
             to_name = dcity + ' - ' + acity
             return_name = acity + ' - ' + dcity
-            idct = data.loc[0]
-            idct = (idct[2], idct[3], idct[4], idct[5])
+            city = data.loc[0]
+            city = (city[2], city[3], city[4], city[5])
             for item in data.values:
-                ridct = (item[2], item[3], item[4], item[5])
-                name = to_name if idct == ridct else return_name
-                days = item[0] - self.__collDate
-                if self.day_limit and days > self.day_limit:
+                rcity = (item[2], item[3], item[4], item[5])
+                name = to_name if city == rcity else return_name
+                if self.day_limit and item[0] > self.day_limit:
                     max_day = self.day_limit
                     continue
-                elif max_day < days:
-                    max_day = days
-                elif min_day > days:
-                    min_day = days
+                if min_day > item[0]:
+                    min_day = item[0]
+                elif max_day < item[0]:
+                    max_day = item[0]
                 if dict.get(name):
+                    dict[name]["rates"] += item[6]
+                    dict[name]["counts"] += 1
                     if dict[name].get(item[0]):
                         dict[name][item[0]]["rate"] += item[6]
                     else:
                         dict[name][item[0]] = {"rate": item[6], "count": int(item[1] / 2)}
                 else:
-                    dict = {name: {item[0]: {"rate": item[6], "count": int(item[1] / 2)}}, 
-                            "rates": 0, "counts": 0}
-                dict[name]["rates"] += item[6]
-                dict[name]["counts"] += 1
+                    dict[name] = {item[0]: {"rate": item[6], "count": int(item[1] / 2)}, 
+                                  "rates": item[6], "counts": 1}
         if max_day not in self.__title["buyday"] or min_day not in self.__title["buyday"]:
             self.__title["buyday"] = ["航线", "平均折扣"]
-            for day in range (min_day, max_day + 1):
+            for day in range(min_day, max_day + 1):
                 self.__title["buyday"].append(day)
         self.master["buyday"] = dict
-        return "buyday", self.__excel_format(self.__flyday(dict, self.__title["buyday"]), True, 16)
+        print()
+        return "buyday", self.__excel_format(self.__buyday(dict, self.__title["buyday"]), 
+                                             True, 16)
     
     @staticmethod
     def __buyday(dict: dict, title: tuple) -> openpyxl.Workbook:
@@ -333,35 +342,70 @@ class Rebuilder():
         ws = wb.create_sheet("总表")
         ws.append(title)
         row = {}
-        total = 0
+        sum = idct = 0
+        total = len(dict)
         for name in dict.keys():
-            total += dict[name]["rates"] / dict[name]["counts"]
+            idct += 1
+            print("\rbuyday sheets >>", int(idct / total * 100), end = "%")
+            sum += dict[name]["rates"] / dict[name]["counts"]
             row[name] = [name, dict[name]["rates"] / dict[name]["counts"]]
             for day in title:
                 if isinstance(day, str):
                     continue
-                if dict[name][day]["count"]:
-                    row[name].append(dict[name][day]["rate"] / dict[name][day]["count"])
+                if dict[name].get(day):
+                    if dict[name][day]["count"]:
+                        row[name].append(dict[name][day]["rate"] / dict[name][day]["count"])
+                    else:
+                        row[name].append(None)
                 else:
                     row[name].append(None)
             ws.append(row[name])
-        total /= len(dict)
+        sum /= len(dict)
         for value in row.values():
-            if value[1] - total >= 0.05:
+            if value[1] - sum >= 0.05:
                 wb["高价"].append(value)
-            elif total - value[1] <= 0.05:
+            elif sum - value[1] <= 0.05:
                 wb["低价"].append(value)
             else:
                 wb["均价"].append(value)
-        
         return wb
     
+    @property
+    def city(self) -> tuple[str, openpyxl.Workbook]:
+        dict = self.master["city"]
+        for file in self.preproc:
+            cols = [0, 2, 10, 11, 12, 13, 18]
+            data = pandas.read_excel(file, index_col = 0).iloc[ : , cols]
+            data.sort_index(inplace = True)
+            name = file.name.split('~')
+            dcity = self.__airportCity.get(name[0])
+            acity = self.__airportCity.get(name[1].split('_', 1)[0])
+            to_name = dcity + ' - ' + acity
+            return_name = acity + ' - ' + dcity
+            city = data.loc[0]
+            city = (city[2], city[3], city[4], city[5])
+            for item in data.values:
+                days = item[0].toordinal() - collDate
+                if self.day_limit and days > self.day_limit:
+                    continue
+                name = item[1][:2] + "-" + item[2][:2]
+        
+        self.master["city"] = dict
+        print()
+        return "city"
+    
+    @property
     def flyday(self) -> tuple[str, openpyxl.Workbook]:
         dict = self.master["flyday"]
+        idct = 0
+        total = len(self.orig)
         for file in self.orig:
+            idct += 1
+            print("\rflyday data >>", int(idct / total * 100), end = "%")
+            collDate = datetime.fromisoformat(file.parent.name).toordinal()
             data = pandas.read_excel(file).iloc[ : , [0, 4, 5, 9]]
             for item in data.values:
-                days = item[0].toordinal() - self.__collDate
+                days = item[0].toordinal() - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
                 name = item[1][:2] + "-" + item[2][:2]
@@ -381,14 +425,18 @@ class Rebuilder():
                         dict[name][fdate] = {days: [item[3], ]}
                 else:
                     dict[name] = {fdate: {days: [item[3], ]}}
-        
+        print()
         self.master["flyday"] = dict
         return "flyday", self.__excel_format(self.__flyday(dict, self.__title["flyday"]), False)
     
     @staticmethod
     def __flyday(dict: dict, title: dict) -> openpyxl.Workbook:
         wb = openpyxl.Workbook()
+        idct = 0
+        total = len(dict)
         for name in dict.keys():
+            idct += 1
+            print("\rflyday sheets >>", int(idct / total * 100), end = "%")
             ws = wb.create_sheet(name)
             title[name].sort()
             ws.append(["航班日期", ] + title[name])
@@ -396,21 +444,27 @@ class Rebuilder():
                 row = [fdate, ]
                 for day in title[name]:
                     if dict[name][fdate].get(day):
-                        total = 0
+                        sum = 0
                         for rate in dict[name][fdate][day]:
-                            total += rate
-                        row.append(total / len(dict[name][fdate][day]))
+                            sum += rate
+                        row.append(sum / len(dict[name][fdate][day]))
                     else:
                         row.append(None)
                 ws.append(row)
         return wb
     
+    @property
     def time(self) -> tuple[str, openpyxl.Workbook]:
         dict = self.master["time"]
+        idct = 0
+        total = len(self.orig)
         for file in self.orig:
+            idct += 1
+            print("\rtime data >>", int(idct / total * 100), end = "%")
             data = pandas.read_excel(file).iloc[ : , [0, 4, 5, 6, 9]]
+            collDate = datetime.fromisoformat(file.parent.name).toordinal()
             for item in data.values:
-                days = item[0].toordinal() - self.__collDate
+                days = item[0].toordinal() - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
                 name = item[1][:2] + "-" + item[2][:2]
@@ -428,7 +482,7 @@ class Rebuilder():
                     continue
                 dict[name]["rates"] += item[4]
                 dict[name]["counts"] += 1
-        
+        print()
         self.master["time"] = dict
         return "time", self.__excel_format(self.__time(dict, self.__title["time"]))
     
@@ -444,9 +498,12 @@ class Rebuilder():
         ws = wb.create_sheet("总表")
         ws.append(title)
         row = {}
-        total = 0
+        sum = idct = 0
+        total = len(dict)
         for name in dict.keys():
-            total += dict[name]["rates"] / dict[name]["counts"]
+            idct += 1
+            print("\rtime sheets >>", int(idct / total * 100), end = "%")
+            sum += dict[name]["rates"] / dict[name]["counts"]
             row[name] = [name, dict[name]["rates"] / dict[name]["counts"]]
             for hour in range(5, 25):
                 if dict[name][hour]["count"]:
@@ -454,26 +511,29 @@ class Rebuilder():
                 else:
                     row[name].append(None)
             ws.append(row[name])
-        total /= len(dict)
+        sum /= len(dict)
         for value in row.values():
-            if value[1] - total >= 0.05:
+            if value[1] - sum >= 0.05:
                 wb["高价"].append(value)
-            elif total - value[1] <= 0.05:
+            elif sum - value[1] <= 0.05:
                 wb["低价"].append(value)
             else:
                 wb["均价"].append(value)
-        
         return wb
     
-    def type(self, files: Path = None) -> tuple[str, openpyxl.Workbook]:
+    @property
+    def type(self) -> tuple[str, openpyxl.Workbook]:
         dict = self.master["type"]
-        if not files:
-            files = self.orig
-        for file in files:
+        idct = 0
+        total = len(self.orig)
+        for file in self.orig:
+            idct += 1
+            print("\rtype data >>", int(idct / total * 100), end = "%")
             data = pandas.read_excel(file).iloc[ : , [0, 3, 4, 5, 9]]
+            collDate = datetime.fromisoformat(file.parent.name).toordinal()
             for item in data.values:
                 ordinal = item[0].toordinal()
-                days = ordinal - self.__collDate
+                days = ordinal - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
                 name = item[2][:2] + "-" + item[3][:2]
@@ -488,7 +548,7 @@ class Rebuilder():
                 dict[name][item[1]]["count"] += 1
                 dict[name]["rates"] += item[4]
                 dict[name]["counts"] += 1
-        
+        print()
         self.master["type"] = dict
         return "type", self.__excel_format(self.__type(dict, self.__title["type"]), False)
     
@@ -499,7 +559,11 @@ class Rebuilder():
         ws.append(title)
         ws = wb.create_sheet("总表")
         ws.append(title)
+        idct = 0
+        total = len(dict)
         for name in dict.keys():
+            idct += 1
+            print("\rtype sheets >>", int(idct / total * 100), end = "%")
             row = [name, ]
             for key in ("小", "中", "大"):
                 count = dict[name][key].get("count")
@@ -509,31 +573,48 @@ class Rebuilder():
                 else:
                     row += [None, 0]
             row.append(dict[name]["rates"] / dict[name]["counts"])
-            ws.append(row)
+            idx = ws.max_row + 1
+            tail = [f"=B{idx}/H{idx}", f"=D{idx}/H{idx}", f"=F{idx}/H{idx}"]
+            ws.append(row + tail)
             if row[2] > 0 or row[6] > 0:
-                wb["去除单一机型"].append(row)
+                idx = wb["去除单一机型"].max_row + 1
+                if row[2] > 0 and row[6] > 0:
+                    tail = [f"=B{idx}/H{idx}", f"=D{idx}/H{idx}", f"=F{idx}/H{idx}"]
+                elif row[6] > 0:
+                    tail = [None, f"=D{idx}/H{idx}", f"=F{idx}/H{idx}"]
+                else:
+                    tail = [f"=B{idx}/H{idx}", f"=D{idx}/H{idx}"]
+                wb["去除单一机型"].append(row + tail)
         return wb
     
+    @property
     def week(self) -> tuple[str, openpyxl.Workbook]:
         dict = self.master["week"]
         for file in self.orig:
+            collDate = datetime.fromisoformat(file.parent.name).toordinal()
             for item in data.values:
-                days = item[0].toordinal() - self.__collDate
+                days = item[0].toordinal() - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
                 name = item[1][:2] + "-" + item[2][:2]
         
         self.master["week"] = dict
+        print()
         return "week"
     
     @staticmethod
     def __excel_format(workbook: openpyxl.Workbook, add_average: bool = True,
-                       A_width: int = 11, ) -> openpyxl.Workbook:
+                       A_width: int = 11, B_width: int = 0) -> openpyxl.Workbook:
         workbook.remove(workbook.active)
+        print("\rformatting sheets...          ")
         for sheet in workbook:
+            if sheet.max_row < 2:
+                continue
             sheet.freeze_panes = 'B2'
             if A_width:
                 sheet.column_dimensions["A"].width = A_width
+            if B_width:
+                sheet.column_dimensions["B"].width = B_width
             if add_average:
                 sheet.append(("平均", ))
                 for col in range(2, sheet.max_column + 1):
@@ -544,9 +625,9 @@ class Rebuilder():
         return workbook
     
     def output(self, *args: tuple[str, openpyxl.Workbook],
-               clear: bool = False, path: Path = Path('.charts')) -> int:
+               clear: bool = False, path: Path | str = Path('.charts')) -> int:
         """
-        Output rebuilt data by function return or Workbook.
+        Output rebuilt data by property or (name: `str`, excel: `Workbook`).
         
         Parameters
         -----
@@ -558,9 +639,13 @@ class Rebuilder():
         
         """
         files = 0
+        if isinstance(path, str):
+            path = Path(path)
+        if not path.exists():
+            path.mkdir()
         for arg in args:
             key, file = arg
-            file.save(path / Path(f"{self.root}_{key}.xlsx"))
+            file.save(path / Path(f"{self.__root}_{key}.xlsx"))
             file.close
             files += 1
             if clear:
@@ -574,5 +659,8 @@ class Rebuilder():
 
 
 if __name__ == "__main__":
-    rebuild = Rebuilder()
-    
+    root = Path("2022-02-17")
+    rebuild = Rebuilder(root)
+    rebuild.zip(root / Path("2022-02-09"))
+    rebuild.output(rebuild.buyday, path = "debugging")
+    rebuild.reset()
