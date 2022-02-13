@@ -129,7 +129,7 @@ class CtripCrawler:
                     self.days -= total - self.day_limit
         if self.days <= 0:
             self.exits(3) #exit for day limit error
-        self.__total = self.__codesum **2 * self.days / 2
+        self.__total = self.__codesum * (self.__codesum + 1) * self.days / 2
 
         if self.__total == 0:
             self.exits(4)   #exit for ignored
@@ -362,7 +362,8 @@ class CtripCrawler:
         return time.time()
 
     @staticmethod
-    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), values_only: bool = False, with_return: bool = True) -> Path:
+    def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), 
+                     values_only: bool = False, with_return: bool = True) -> Path:
         wbook = openpyxl.Workbook()
         wsheet = wbook.active
         wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
@@ -391,12 +392,10 @@ class CtripCrawler:
                 row[9].number_format = '0%' # Make the rate show as percentage
                 wsheet.append(row)
 
-        if with_return:
-            wbook.save(path / f'{dcity}~{acity}.xlsx')
-        else:
-            wbook.save(path / f'{dcity}-{acity}.xlsx')
+        file = Path(path / f'{dcity}~{acity}.xlsx') if with_return else Path(path / f'{dcity}-{acity}.xlsx')
+        wbook.save(file)
         wbook.close
-        return Path(path / f'{dcity}-{acity}.xlsx')
+        return file
 
 
     @staticmethod
@@ -440,7 +439,7 @@ class CtripCrawler:
         ignoreNew = set()
 
         '''Initialize running parameters'''
-        path = kwargs.get('path', Path(self.first_date) / Path(str(datetime.datetime.now().date())))
+        path = kwargs.get('path', Path(self.first_date) / Path(datetime.datetime.now().date().isoformat()))
         if not isinstance(path, Path):
             path = Path(str(path))
         if not path.exists():
