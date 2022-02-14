@@ -503,7 +503,7 @@ if __name__ == '__main__':
     for folder in folders:
         path = Path(first_date) / Path(folder)
         for file in path.iterdir():
-            if file.match('*.xlsx') and 'preproc' not in file.name:
+            if file.match('*.xlsx') and '_' not in file.name:
                 print('\r' + file.name, 'excel initializing...', end = '')
                 debugging = Preprocessor(path = path, excel = file, chinese_header = True)
                 print('\r' + file.name, 'preprocess running...', end = '')
