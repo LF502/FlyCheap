@@ -267,10 +267,10 @@ class CivilAviation:
         '''Get city name from airport name'''
         if __strip:
             if __str in self.__striptemp:
-                return __str[2:]
+                return __str[:2]
             elif self.is_multiairport(__str):
                 self.__striptemp.add(__str)
-                return __str[2:]
+                return __str[:2]
         return __str
     
     def from_code(self, __str: str, /) -> str:

@@ -11,7 +11,7 @@ class Rebuilder(CivilAviation):
     -----
     Rebuild all data by filtering factors that influence ticket rate.
     
-    Here are 6 significant factors in class property:
+    Here are 6 significant factors can be rebuilt in class methods:
     - `airline`: Airlines' rates, competition and flight time;
     - `city`: City class, location and airport throughput;
     - `buyday`: Day of purchase before flights;
@@ -165,8 +165,8 @@ class Rebuilder(CivilAviation):
             self.master = {"airline": {}, "city": {}, "buyday": {}, 
                            "flyday": {}, "time": {}, "type": {},}
     
-    @property
-    def airline(self) -> tuple[str, openpyxl.Workbook]:
+    
+    def airline(self, sep_multi: bool = False) -> tuple[str, openpyxl.Workbook]:
         datadict = self.master["airline"]
         idct = 0
         total = len(self.files)
@@ -179,7 +179,11 @@ class Rebuilder(CivilAviation):
                 days = item[0].toordinal() - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
-                name = f"{self.__airData.from_name(item[2])}-{self.__airData.from_name(item[3])}"
+                if sep_multi:
+                    name = f'{item[2]}-{item[3]}'
+                else:
+                    name = f"{self.__airData.from_name(item[2])}-{self.__airData.from_name(item[3])}"
+                    
                 date = item[0].date()
                 if item[1] not in self.__title["airline"]["airlines"]:
                     self.__title["airline"]["airlines"].append(item[1])
@@ -206,7 +210,7 @@ class Rebuilder(CivilAviation):
         print()
         self.master["airline"] = datadict
         return "airline", self.__excel_format(self.__airline(datadict, self.__title["airline"]), 
-                                              B_width = 12)
+                                              wdB = 12)
     
     @staticmethod
     def __airline(datadict: dict, title: dict) -> openpyxl.Workbook:
@@ -295,8 +299,8 @@ class Rebuilder(CivilAviation):
                 ws.append(row)
         return wb
     
-    @property
-    def buyday(self) -> tuple[str, openpyxl.Workbook]:
+    
+    def buyday(self, sep_multi: bool = False) -> tuple[str, openpyxl.Workbook]:
         '''
         Notes
         -----
@@ -319,7 +323,10 @@ class Rebuilder(CivilAviation):
             print("\rbuyday data >>", int(idct / total * 100), end = "%")
             data = pandas.read_excel(file).iloc[ : , [0, 4, 5, 9]]
             for item in data.values:
-                name = f"{self.__airData.from_name(item[1])}-{self.__airData.from_name(item[2])}"
+                if sep_multi:
+                    name = f'{item[1]}-{item[2]}'
+                else:
+                    name = f"{self.__airData.from_name(item[1])}-{self.__airData.from_name(item[2])}"
                 day = item[0].toordinal()
                 if min_day > day:
                     min_day = day
@@ -356,7 +363,7 @@ class Rebuilder(CivilAviation):
         for row in wsd.iter_rows(1, 1, 3, wsd.max_column):
             for cell in row:
                 cell.number_format = "m\"月\"d\"日\""
-        for sheet in ("高价", "低价", "均价", "总价"):
+        for sheet in ("高价", "低价", "均价", "总表"):
             ws = wb.create_sheet(sheet)
             ws.append(title[1:])
             ws.append([None, "(星期)",] + title[0])
@@ -399,7 +406,7 @@ class Rebuilder(CivilAviation):
                 wb["均价"].append(value)
         return wb
     
-    @property
+    
     def city(self) -> tuple[str, openpyxl.Workbook]:
         datadict = self.master["city"]
         idct = 0
@@ -423,7 +430,7 @@ class Rebuilder(CivilAviation):
                     datadict[dcity][acity] = [totalfare, ]
             else:
                 datadict[dcity] = {
-                    dcity: [self.airports.get(dcity, 0.05), 
+                    dcity: [self.__airData.airports.get(dcity, 0.05), 
                             self.__airData.cityLocation.get(dcity, 0.5), 
                             self.__airData.cityClass.get(dcity, 0.2), d_tourism],
                     acity: [totalfare, ]}
@@ -433,7 +440,7 @@ class Rebuilder(CivilAviation):
                     datadict[acity][dcity] = [totalfare, ]
             else:
                 datadict[acity] = {
-                    acity: [self.airports.get(acity, 0.05), 
+                    acity: [self.__airData.airports.get(acity, 0.05), 
                             self.__airData.cityLocation.get(acity, 0.5), 
                             self.__airData.cityClass.get(acity, 0.2), a_tourism],
                     dcity: [totalfare, ]}
@@ -451,7 +458,7 @@ class Rebuilder(CivilAviation):
         self.master["city"] = datadict
         print()
         return "city", self.__excel_format(self.__city(datadict, self.__title["city"]), 
-                                           False, wdA = 14, freeze_panes = 'E2')
+                                           False, freeze_panes = 'E2')
     
     @staticmethod
     def __city(datadict: dict, title: tuple) -> openpyxl.Workbook:
@@ -488,8 +495,8 @@ class Rebuilder(CivilAviation):
                 ws.append(row)
         return wb
     
-    @property
-    def flyday(self) -> tuple[str, openpyxl.Workbook]:
+    
+    def flyday(self, sep_multi: bool = False) -> tuple[str, openpyxl.Workbook]:
         datadict = self.master["flyday"]
         idct = 0
         total = len(self.files)
@@ -502,7 +509,10 @@ class Rebuilder(CivilAviation):
                 days = item[0].toordinal() - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
-                name = f"{self.__airData.from_name(item[1])}-{self.__airData.from_name(item[2])}"
+                if sep_multi:
+                    name = f'{item[1]}-{item[2]}'
+                else:
+                    name = f"{self.__airData.from_name(item[1])}-{self.__airData.from_name(item[2])}"
                 if days not in self.__title["flyday"]:
                     self.__title["flyday"].append(days)
                 fdate = item[0].date().isoformat()
@@ -544,8 +554,8 @@ class Rebuilder(CivilAviation):
                 ws.append(row)
         return wb
     
-    @property
-    def time(self) -> tuple[str, openpyxl.Workbook]:
+    
+    def time(self, sep_multi: bool = False) -> tuple[str, openpyxl.Workbook]:
         datadict = self.master["time"]
         idct = 0
         total = len(self.files)
@@ -563,7 +573,10 @@ class Rebuilder(CivilAviation):
                 days = ordinal - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
-                name = f"{self.__airData.from_name(item[1])}-{self.__airData.from_name(item[2])}"
+                if sep_multi:
+                    name = f'{item[1]}-{item[2]}'
+                else:
+                    name = f"{self.__airData.from_name(item[1])}-{self.__airData.from_name(item[2])}"
                 if not datadict.get(name):
                     datadict[name] = {"rates": 0, "counts": 0}
                 hour = 24 if item[3].hour == 0 else item[3].hour
@@ -648,8 +661,8 @@ class Rebuilder(CivilAviation):
                 wb["均价"].append(value)
         return wb
     
-    @property
-    def type(self) -> tuple[str, openpyxl.Workbook]:
+    
+    def type(self, sep_multi: bool = False) -> tuple[str, openpyxl.Workbook]:
         '''
         Notes
         -----
@@ -670,7 +683,10 @@ class Rebuilder(CivilAviation):
                 days = ordinal - collDate
                 if self.day_limit and days > self.day_limit:
                     continue
-                name = f"{self.__airData.from_name(item[2])}-{self.__airData.from_name(item[3])}"
+                if sep_multi:
+                    name = f'{item[2]}-{item[3]}'
+                else:
+                    name = f"{self.__airData.from_name(item[2])}-{self.__airData.from_name(item[3])}"
                 if not datadict.get(name):
                     datadict[name] = {"小": {"rate": 0, "count": 0}, 
                                   "中": {"rate": 0, "count": 0}, 
@@ -723,7 +739,7 @@ class Rebuilder(CivilAviation):
         return wb
     
     @staticmethod
-    def __excel_format(workbook: openpyxl.Workbook, add_average: bool = True, wdA: int = 11, 
+    def __excel_format(workbook: openpyxl.Workbook, add_average: bool = True, wdA: int = 14, 
                        wdB: int = 0, freeze_panes: str = 'C2') -> openpyxl.Workbook:
         workbook.remove(workbook.active)
         print("\rformatting sheets...          ")
@@ -785,6 +801,7 @@ class Rebuilder(CivilAviation):
 if __name__ == "__main__":
     root = Path("2022-02-17")
     rebuild = Rebuilder(root)
-    rebuild.append_zip(root / Path("2022-02-08"))
-    rebuild.output(rebuild.time)
+    rebuild.append_zip(root / Path("2022-02-12"))
+    rebuild.output(rebuild.city())
     rebuild.reset()
+    
