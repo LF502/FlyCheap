@@ -13,26 +13,14 @@ class CtripSearcher(CtripCrawler):
     
     Use `run` to process!
     """
-    __dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
-    __airportCity = {
-        'BJS':'北京','CAN':'广州','SHA':'上海','CTU':'成都','TFU':'成都','SZX':'深圳','KMG':'昆明','XIY':'西安','PEK':'北京',
-        'PKX':'北京','PVG':'上海','CKG':'重庆','HGH':'杭州','NKG':'南京','CGO':'郑州','XMN':'厦门','WUH':'武汉','CSX':'长沙',
-        'TAO':'青岛','HAK':'海口','URC':'乌鲁木齐','TSN':'天津','KWE':'贵阳','HRB':'哈尔滨','SHE':'沈阳','SYX':'三亚','DLC':'大连',
-        'TNA':'济南','NNG':'南宁','LHW':'兰州','FOC':'福州','TYN':'太原','CGQ':'长春','KHN':'南昌','HET':'呼和浩特','NGB':'宁波',
-        'WNZ':'温州','ZUH':'珠海','HFE':'合肥','SJW':'石家庄','INC':'银川','YNT':'烟台','KWL':'桂林','JJN':'泉州','WUX':'无锡',
-        'SWA':'揭阳','XNN':'西宁','LJG':'丽江','JHG':'西双版纳','NAY':'北京','LXA':'拉萨','MIG':'绵阳','CZX':'常州','NTG':'南通',
-        'YIH':'宜昌','WEH':'威海','XUZ':'徐州','ZHA':'湛江','YTY':'扬州','DYG':'张家界','DSN':'鄂尔多斯','BHY':'北海','LYI':'临沂',
-        'HLD':'呼伦贝尔','HUZ':'惠州','UYN':'榆林','YCU':'运城','KHG':'喀什','HIA':'淮安','BAV':'包头','ZYI':'遵义','KRL':'库尔勒',
-        'LUM':'德宏','YNZ':'盐城','KOW':'赣州','YIW':'义乌','LYG':'连云港','XFN':'襄阳','CIF':'赤峰','LZO':'泸州','DLU':'大理',
-        'AKU':'阿克苏','YNJ':'延吉','ZYI':'遵义','HTN':'和田','LZH':'柳州','LYA':'洛阳','WDS':'十堰','HSN':'舟山','JNG':'济宁',
-        'YIN':'伊宁','ENH':'恩施','ACX':'兴义','HYN':'台州','TCZ':'腾冲','DAT':'大同','BSD':'保山','BFJ':'毕节','NNY':'南阳',
-        'WXN':'万州','TGO':'通辽','CGD':'常德','HNY':'衡阳','XIC':'西昌','MDG':'牡丹江','RIZ':'日照','NAO':'南充','YBP':'宜宾',}
-
     def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), 
                  days: int = 1, day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3, 
                  with_return: bool = True, proxy: str | bool = None) -> None:
 
         CtripCrawler.__init__(self, cityList, flightDate, days, day_limit, ignore_cities, ignore_threshold, with_return, proxy)
+        self.__airData = super(CtripCrawler)
+
+        self.__dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
 
         self.__codesum = len(cityList)
         self.__total = self.__codesum * (self.__codesum - 1) * self.days / 2
@@ -81,8 +69,8 @@ class CtripSearcher(CtripCrawler):
 
     def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
         datarows = list()
-        departureName = dcityname = self.__airportCity.get(dcity, None)
-        arrivalName = acityname = self.__airportCity.get(acity, None)
+        departureName = dcityname = self.__airData.from_code(dcity)
+        arrivalName = acityname = self.__airData.from_code(acity)
         dow, date = self.__dayOfWeek[flightDate.isoweekday()], flightDate.isoformat()
         proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
         transaction_id, data = self.transaction_id(dcity, acity, date, proxy)
@@ -112,8 +100,8 @@ class CtripSearcher(CtripCrawler):
         if routeList is None:   # No data, return empty and ignore these flights in the future.
             return datarows
 
-        d_multiairport = True if dcityname == '北京' or dcityname == '上海' or dcityname== '成都' else False
-        a_multiairport = True if acityname == '北京' or acityname == '上海' or acityname== '成都' else False
+        d_multiairport = self.__airData.is_multiairport(dcity)
+        a_multiairport = self.__airData.is_multiairport(acity)
         for route in routeList:
             flightSegments = route.get('flightSegments')
             priceList = route.get('priceList')
@@ -131,14 +119,12 @@ class CtripSearcher(CtripCrawler):
                         departureName = flight.get('departureAirportShortName')
                         departureName = dcityname + departureName[:2]
                     elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
-                        departureName = flight.get('departureCityName') # Otherwise the code-name is not
-                        self.__airportCity[dcity] = departureName   # ...in the code-name dict, therefore it is added now 
+                        departureName = flight.get('departureCityName')
                     if a_multiairport:
                         arrivalName = flight.get('arrivalAirportShortName')
                         arrivalName = acityname + arrivalName[:2]
                     elif not arrivalName:
                         arrivalName = flight.get('arrivalCityName')
-                        self.__airportCity[acity] = arrivalName
                     craftType = flight.get('aircraftSize')
                     priceList = priceList[0]
                     price = priceList.get('sortPrice')
