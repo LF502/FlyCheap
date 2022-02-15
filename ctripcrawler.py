@@ -485,7 +485,7 @@ class CtripCrawler(CivilAviation):
                             break
                         elif i != 0 and data_diff > 0:
                             break
-                        else:
+                        elif j == 1:
                             print(' ...retry', end = '')
                     else:
                         if i == 0 and data_diff < self.ignore_threshold:
@@ -506,7 +506,7 @@ class CtripCrawler(CivilAviation):
                                 break
                             elif i != 0 and data_diff > 0:
                                 break
-                            else:
+                            elif j == 1:
                                 print(' ...retry', end = '')
                         else:
                             if i == 0 and data_diff < self.ignore_threshold:
