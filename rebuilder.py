@@ -14,7 +14,7 @@ class Rebuilder(CivilAviation):
     
     Here are 6 significant factors can be rebuilt in class methods:
     - `airline`: Airlines' rates, competition and flight time;
-    - `city`: City class, location and airport throughput;
+    - `city`: City and route information overview;
     - `buyday`: The number of days before flights are fixed;
     - `flyday`: Dates and weekdays of flight are fixed;
     - `time`: Dep time of flights;
@@ -48,8 +48,8 @@ class Rebuilder(CivilAviation):
                         "hours": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 
                                   16, 17, 18, 19, 20, 21, 22, 23, 24]}, 
             "city": ("航线", "总价", "平均折扣", "航班总量",
-                     "出发地", "机场系数", "地理位置", "城市级别", "旅游", 
-                     "到达地", "机场系数", "地理位置", "城市级别", "旅游", ), 
+                     "出发地", "机场系数", "地理位置", "城市级别", "内陆旅游", 
+                     "到达地", "机场系数", "地理位置", "城市级别", "内陆旅游", ), 
             "flyday": [], 
             "buyday": [], 
             "time": ("航线", "平均折扣", 5, 6, 7, 8, 9, 10, 11, 12, 
@@ -68,6 +68,9 @@ class Rebuilder(CivilAviation):
     
     
     def root(self, __root: Path = None, /) -> Path:
+        '''Change root path if root path is given.
+        
+        Return seted root path in `Path`.'''
         if isinstance(__root, Path):
             if __root.exists():
                 self.__root = __root
@@ -115,7 +118,7 @@ class Rebuilder(CivilAviation):
         '''
         Append data from a zip file to process.
         
-        - path: `Path`, where to extract the zip file.
+        - paths: `Path`, where to find and extract the zip file in `root`.
         
         - file: `Path` | `str`, the zip file path or name.
         
@@ -175,8 +178,8 @@ class Rebuilder(CivilAviation):
                             "hours": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 
                                     16, 17, 18, 19, 20, 21, 22, 23, 24]}, 
                 "city": ("航线", "总价", "平均折扣", "航班总量", 
-                         "出发地", "机场系数", "地理位置", "城市级别", "旅游", 
-                         "到达地", "机场系数", "地理位置", "城市级别", "旅游", ), 
+                         "出发地", "机场系数", "地理位置", "城市级别", "内陆旅游", 
+                         "到达地", "机场系数", "地理位置", "城市级别", "内陆旅游", ), 
                 "flyday": [], 
                 "buyday": [], 
                 "time": ("航线", "平均折扣", 5, 6, 7, 8, 9, 10, 11, 12, 
@@ -480,7 +483,7 @@ class Rebuilder(CivilAviation):
     
     
     def city(self, *folders: str) -> tuple[str, Workbook]:
-        '''City class, location and airport throughput'''
+        '''City and route information overview'''
         datadict = self.master["city"]
         if len(folders):
             files = []
@@ -911,11 +914,13 @@ class Rebuilder(CivilAviation):
     def output(self, *args: tuple[str, Workbook],
                clear: bool = False, path: Path | str = Path('.charts')) -> int:
         """
-        Output rebuilt data by property or (name: `str`, excel: `Workbook`).
+        Data
+        -----
+        Output rebuilt data by methods return (data name: `str`, excel: `Workbook`).
         
         Parameters
         -----
-        clear: `bool`, clear outputed rebuilt data after output.
+        clear: `bool`, clear outputed rebuilt data (not unlink files) after output.
                 default: `False`
         
         path: `Path`, where to output.
