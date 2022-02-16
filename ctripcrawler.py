@@ -17,12 +17,14 @@ class CtripCrawler(CivilAviation):
     """
 
     def __init__(self, cityList: list, flightDate: date = date.today(), 
-                 days: int = 1, day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3,
+                 days: int = 1, day_limit: int = 0, ignore_routes: set = None, 
+                 ignore_threshold: int = 3,
                  with_return: bool = True, proxy: str | bool = None) -> None:
         
         self.__airData = CivilAviation()
         
-        self.__dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
+        self.__dayOfWeek = {
+            1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
         
         try:
             self.__codesum = len(cityList)
@@ -38,7 +40,7 @@ class CtripCrawler(CivilAviation):
         self.days = days
         self.day_limit = day_limit
 
-        self.ignore_cities = ignore_cities
+        self.ignore_routes = ignore_routes
         self.ignore_threshold = ignore_threshold
         self.with_return = with_return
 
@@ -158,91 +160,38 @@ class CtripCrawler(CivilAviation):
     @property
     def skip(self) -> set:
         '''Ignore cities with few flights.
-        If two cities given are too close or not in analysis range, skip, by returning matrix coordinates in set. '''
-        if self.ignore_threshold == 0:
-            return set()
-        else:
-            ignoreSet = {('BJS','TSN'),('BJS','SJW'),('BJS','TYN'),('BJS','TNA'),('BJS','SHE'),('BJS','HET'),
-                        ('SJW','TYN'),('SJW','TNA'),('TSN','TNA'),('TSN','TYN'),('TYN','TNA'),('SJW','TSN'),
-                        ('SHE','CGQ'),('CGQ','HRB'),('SHE','HRB'),('DLC','SHE'),('DLC','CGQ'),('TSN','DLC'),
-                        ('BJS','SHE'),('BJS','CGO'),('TNA','CGO'),('BJS','TAO'),('TNA','TAO'),('TSN','TAO'),
-                        ('CGO','SJW'),('CGO','XIY'),('CGO','HFE'),('CGO','TYN'),('CGO','WUH'),('CGO','NKG'),
-                        ('XIY','INC'),('XIY','LHW'),('CTU','XIY'),('XIY','TYN'),('XIY','SJW'),('XIY','WUH'),
-                        ('WUH','HFE'),('WUH','NKG'),('NKG','HFE'),('WUH','CSX'),('WUH','HGH'),('WUH','KHN'),
-                        ('NKG','WUX'),('NKG','CZX'),('NKG','NTG'),('NKG','YTY'),('NKG','SHA'),('NKG','HGH'),
-                        ('SHA','HGH'),('SHA','WUX'),('SHA','NTG'),('SHA','CZX'),('SHA','YTY'),('HGH','WUX'),
-                        ('HGH','CZX'),('HGH','NTG'),('HGH','YTY'),('WUX','CZX'),('WUX','NTG'),('WUX','YTY'),
-                        ('CZX','NTG'),('CZX','YTY'),('NTG','YTY'),('SHA','HFE'),('HGH','HFE'),('HFE','CZX'),
-                        ('HFE','WUX'),('HFE','YTY'),('HFE','NTG'),('WUH','CZX'),('WUH','WUX'),('WUH','NTG'),
-                        ('WUH','YTY'),('KHN','CSX'),('KHN','HGH'),('KHN','FOC'),('KHN','XMN'),('KHN','KWE'),
-                        ('CSX','CAN'),('CSX','NNG'),('CSX','FOC'),('CSX','XMN'),('HGH','FOC'),('HGH','XMN'),
-                        ('CAN','SZX'),('CAN','ZUH'),('ZUH','SZX'),('CAN','SWA'),('ZUH','SWA'),('SZX','SWA'),
-                        ('SWA','FOC'),('SWA','XMN'),('CAN','NNG'),('FOC','NNG'),('KWE','NNG'),('KWE','KMG'),
-                        ('KMG','NNG'),('KWE','CTU'),('KWE','CSX'),('CKG','KWE'),('CTU','CKG'),('CKG','XIY'),
-                        ('LHW','XNN'),('XNN','INC'),('INC','LHW'),('HET','INC'),('HET','TYN'),('HET','SJW'),
-                        ('JJN','XMN'),('JJN','FOC'),('JJN','ZHA'),('SZX','JJN'),('SWA','ZHA'),('FOC','ZHA'),
-                        ('HAK','SYX'),('HRB','HLD'),('SZX','ZHA'),('FOC','SYX'),('FOC','SZX'),('FOC','XMN'),
-                        ('HFE','CSX'),('CGQ','TSN'),('TSN','JJN'),}
+        If two cities given are too close or not in analysis range, skip, 
+        by returning matrix coordinates in set. '''
         if self.ignore_threshold >= 3:
-            ignoreExt = {('LXA','ZHA'),('LXA','SZX'),('LXA','JJN'),('CTU','SWA'),('SHA','LXA'),('TSN','LXA'),
-                        ('LXA','XMN'),('LXA','CZX'),('LXA','WUX'),('LXA','HLD'),('LXA','JHG'),('LXA','SWA'),
-                        ('LXA','TAO'),('LXA','DLC'),('LXA','SYX'),('LXA','HAK'),('LXA','FOC'),('LXA','JJN'),
-                        ('JHG','CZX'),('JHG','WUX'),('JHG','XMN'),('JHG','JJN'),('JHG','HRB'),('JHG','ZHA'),
-                        ('JHG','SWA'),('JHG','SYX'),('JHG','HLD'),('JHG','URC'),('JHG','TAO'),('JHG','DLC'),
-                        ('HLD','KMG'),('WUX','LHW'),('XMN','ZHA'),('WUH','JHG'),('TAO','JJN'),('TSN','ZHA'),
-                        ('HRB','WUX'),('ZHA','HAK'),('XIY','SWA'),('CTU','ZHA'),('LHW','JJN'),('TAO','CZX'),
-                        ('WUX','XMN'),('CZX','CGO'),('HLD','SHA'),('WUH','JJN'),('JHG','SZX'),('HLD','LHW'),
-                        ('TSN','SWA'),('CGO','ZHA'),('CZX','SYX'),('TSN','NKG'),('LHW','SYX'),('HGH','SWA'),
-                        ('HLD','DLC'),('URC','LXA'),('TSN','CGO'),('WUX','SWA'),('HLD','XMN'),('XMN','SYX'),
-                        ('HLD','FOC'),('CGO','SWA'),('HLD','ZHA'),('HRB','JJN'),('DLC','ZHA'),('HLD','HGH'),
-                        ('HLD','XIY'),('XIY','ZHA'),('WUX','HAK'),('CKG','JHG'),('HLD','SWA'),('HGH','LXA'),
-                        ('HLD','WUH'),('HLD','NKG'),('DLC','SWA'),('JHG','LHW'),('URC','FOC'),('NKG','ZHA'),
-                        ('HLD','CAN'),('TSN','CZX'),('SWA','HAK'),('CZX','JJN'),('URC','ZHA'),('ZHA','SYX'),
-                        ('HLD','CGO'),('WUX','FOC'),('CKG','LHW'),('LXA','CAN'),('WUH','LHW'),('WUX','ZHA'),
-                        ('TAO','FOC'),('HLD','HAK'),('CTU','JHG'),('CZX','CKG'),('TAO','ZHA'),('JJN','SYX'),
-                        ('NKG','SWA'),('BJS','HLD'),('BJS','CZX'),('WUX','XIY'),('URC','SWA'),('NKG','LXA'),
-                        ('BJS','JHG'),('JHG','XIY'),('NKG','JHG'),('XMN','SZX'),('TAO','SWA'),('CGO','LXA'),
-                        ('TSN','SYX'),('HGH','JJN'),('HRB','LHW'),('CZX','KMG'),('HLD','URC'),('HLD','TAO'),
-                        ('DLC','CZX'),('WUX','CGO'),('JHG','CAN'),('DLC','URC'),('TSN','WUX'),('LHW','SWA'),
-                        ('URC','JJN'),('HRB','DLC'),('WUH','SWA'),('LHW','LXA'),('WUH','LXA'),('JHG','HAK'),
-                        ('HRB','ZHA'),('SWA','SYX'),('CZX','LHW'),('TSN','JHG'),('LHW','HAK'),('KMG','ZHA'),
-                        ('HLD','TSN'),('XIY','JJN'),('FOC','HAK'),('JHG','FOC'),('HLD','CKG'),('HLD','SYX'),
-                        ('HLD','SZX'),('HRB','SWA'),('WUX','URC'),('DLC','SYX'),('CZX','XMN'),('CZX','FOC'),
-                        ('HRB','LXA'),('TAO','URC'),('TSN','LHW'),('CZX','ZHA'),('HLD','WUX'),('CGQ','CZX'),
-                        ('CGO','JHG'),('LHW','ZHA'),('DLC','WUX'),('CKG','ZHA'),('WUH','ZHA'),('HLD','CTU'),
-                        ('CZX','XIY'),('WUX','JJN'),('HLD','CZX'),('CZX','SWA'),('JJN','SWA'),('URC','SYX'),
-                        ('WUX','SYX'),('HGH','ZHA'),('HLD','JJN'),('CZX','HAK'),('HRB','URC'),('CZX','URC'),
-                        ('DLC','JJN'),('DLC','LHW'),('JJN','HAK'),('TAO','WUX'),('HRB','INC'),('KMG','INC'),
-                        ('XMN','INC'),('HFE','XIY'),('SJW','SZX'),('TSN','SHE'),('CGQ','INC'),('SJW','HFE'),
-                        ('XMN','LHW'),('SJW','WUH'),('SZX','INC'),('INC','WUH'),('SYX','INC'),('SJW','TAO'),
-                        ('CGQ','LHW'),('SJW','CZX'),('SJW','WUX'),('SJW','INC'),('INC','FOC'),('SZX','CSX'),
-                        ('SJW','CSX'),('HFE','INC'),('HAK','INC'),('CZX','INC'),('HFE','FOC'),('TSN','HFE'),
-                        ('SHE','INC'),('CGQ','URC'),('HFE','LHW'),('CZX','CSX'),('CSX','CGO'),('TSN','INC'),
-                        ('WUX','INC'),('INC','DLC'),('SJW','DLC'),('SHE','LHW')}
-            ignoreSet = ignoreSet.union(ignoreExt)
+            ignore_routes = self.__airData.routes_inactive | self.__airData.routes_low
+        elif self.ignore_threshold > 0:
+            ignore_routes = self.__airData.routes_inactive
+        else:
+            ignore_routes = set()
   
-        skipSet = set()
-        if self.ignore_cities is not None and isinstance(self.ignore_cities, set):
-            ignoreSet = ignoreSet.union(self.ignore_cities, ignoreSet)
+        if self.ignore_routes is not None and isinstance(self.ignore_routes, set):
+            ignore_routes = ignore_routes.union(self.ignore_routes, ignore_routes)
+        
+        ignore_cities = set()
         for i in range(self.__codesum):
             for j in range(i, self.__codesum):
                 if i == j:
-                    skipSet.add((i, j))
+                    ignore_cities.add((i, j))
                 if self.cityList[i] == self.cityList[j] or \
-                    (self.cityList[i], self.cityList[j]) in ignoreSet or \
-                    (self.cityList[j], self.cityList[i]) in ignoreSet:
-                    # If the city tuple is the same or found in the set, it shouldn't be processed.
-                    skipSet.add((i, j))
-        self.__total -= self.days * len(skipSet)
-        return skipSet
+                    (self.cityList[i], self.cityList[j]) in ignore_routes or \
+                    (self.cityList[j], self.cityList[i]) in ignore_routes:
+                    # If the city tuple is the same or found in the set, do not process.
+                    ignore_cities.add((i, j))
+        self.__total -= self.days * len(ignore_cities)
+        return ignore_cities
 
     @staticmethod
     def exits(code: int = 0) -> None:
         '''Exit program with a massage'''
         import sys
-        errorCode = {0: 'reaching exit point', 1: 'empty or incorrect data', 2: 'city tuple error',
-                     3:'day limit error', 4: 'no flight', -1: 'Unknown error'}
-        print(f' Exited for {errorCode[code]}')
+        error_code = {0: 'reaching exit point', 1: 'empty or incorrect data', 
+                      2: 'city tuple error',3:'day limit error', 4: 'no flight'}
+        print(f' Exited for {error_code[code]}')
         sys.exit()
 
     @property
@@ -421,7 +370,7 @@ class CtripCrawler(CivilAviation):
         to_city: `str`, default: `None`
         '''
         print('\rGetting data...')
-        skipSet = self.skip
+        ignore_cities = self.skip
         filesum = 0
         ignoreNew = set()
 
@@ -439,7 +388,7 @@ class CtripCrawler(CivilAviation):
                 start_index = self.cityList.index(from_city)
                 for dcity in range(start_index):
                     for acity in range(dcity, self.__codesum):
-                        if (dcity, acity) not in skipSet:
+                        if (dcity, acity) not in ignore_cities:
                             self.__total -= self.days
             except:
                 start_index = 0
@@ -450,7 +399,7 @@ class CtripCrawler(CivilAviation):
                 end_index = self.cityList.index(to_city) + 1
                 for dcity in range(end_index, self.__codesum):
                     for acity in range(dcity, self.__codesum):
-                        if (dcity, acity) not in skipSet:
+                        if (dcity, acity) not in ignore_cities:
                             self.__total -= self.days
             except:
                 end_index = self.__codesum
@@ -460,7 +409,7 @@ class CtripCrawler(CivilAviation):
         '''Data collecting controller'''
         for dcity in range(start_index, end_index):
             for acity in range(dcity, self.__codesum):
-                if (dcity, acity) in skipSet:
+                if (dcity, acity) in ignore_cities:
                     continue    # If the city tuple key / coordinate is not found, process.
                 if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
                     print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
@@ -549,7 +498,7 @@ if __name__ == "__main__":
     
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
-    ignore_cities = {('BJS', 'LXA'), ('DLC', 'XIY')}
+    ignore_routes = {('BJS', 'LXA'), ('DLC', 'XIY')}
     
     # 代理: 字符串 - 代理网址API / False - 禁用 / 不填 - 使用ProxyPool
     proxyurl = None
@@ -557,7 +506,7 @@ if __name__ == "__main__":
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数: 是否输出文件 (否: 生成列表) 、存储路径、是否带格式
-    crawler = CtripCrawler(cities, date(2022,2,17), 30, 0, ignore_cities, ignore_threshold, True, proxyurl)
+    crawler = CtripCrawler(cities, date(2022,2,17), 30, 0, ignore_routes, ignore_threshold, True, proxyurl)
     for data in crawler.run():
         pass
     else:

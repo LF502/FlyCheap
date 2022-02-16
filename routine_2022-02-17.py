@@ -14,12 +14,15 @@ if __name__ == "__main__":
               'URC','XIY','LHW','LXA',
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     flightDate = date(2022, 2, 17)
-    ignore_threshold = 3
-    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')}
+    ignore_threshold = 0
+    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')} | super(CtripCrawler).skipped_routes
     path = None
     
+    parameters = (cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
+    crawler = CtripCrawler(*parameters)
+    
     sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
-    crawler = CtripCrawler(cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
+    
     
     for data in crawler.run():
         if not path:

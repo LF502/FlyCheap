@@ -18,8 +18,10 @@ if __name__ == "__main__":
     ignore_cities = None
     path = None
     
+    parameters = (cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
+    
     sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
-    crawler = CtripCrawler(cities, flightDate, 45, 46, ignore_cities, ignore_threshold)
+    crawler = CtripCrawler(*parameters)
     
     for data in crawler.run():
         if not path:
