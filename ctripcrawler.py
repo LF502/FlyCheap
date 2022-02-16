@@ -1,13 +1,12 @@
-import datetime
-import time
-from typing import Generator
+from datetime import datetime, date, time
 from requests import get, post
 from json import dumps, loads
-import openpyxl
+from random import random
+from typing import Generator
+from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
 from pathlib import Path
-from random import random
 from civilaviation import CivilAviation
 
 class CtripCrawler(CivilAviation):
@@ -17,7 +16,7 @@ class CtripCrawler(CivilAviation):
     Use `run` to process!
     """
 
-    def __init__(self, cityList: list, flightDate: datetime.date = datetime.datetime.now().date(), 
+    def __init__(self, cityList: list, flightDate: date = date.today(), 
                  days: int = 1, day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3,
                  with_return: bool = True, proxy: str | bool = None) -> None:
         
@@ -44,7 +43,7 @@ class CtripCrawler(CivilAviation):
         self.with_return = with_return
 
         '''Day range preprocess'''
-        currDate = datetime.datetime.now().toordinal()
+        currDate = date.today().toordinal()
         if currDate >= self.flightDate.toordinal():   # If collect day is behind today, change the beginning date and days of collect.
             self.ignore_threshold = 0
             self.days -= currDate - self.flightDate.toordinal() + 1
@@ -277,7 +276,7 @@ class CtripCrawler(CivilAviation):
         return self.__userAgents[int(self.__lenAgents * random())]
 
 
-    def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
+    def collector(self, flightDate: date, dcity: str, acity: str) -> list():
         proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
         datarows = list()
         departureName = dcityname = self.__airData.from_code(dcity)
@@ -314,8 +313,8 @@ class CtripCrawler(CivilAviation):
                     airlineName = flight.get('airlineName')
                     if '旗下' in airlineName:   # Airline name should be as simple as possible
                         airlineName = airlineName.split('旗下', 1)[1]   # Convert the time string to a time class
-                    departureTime = datetime.time().fromisoformat(flight.get('departureDate').split(' ', 1)[1])
-                    arrivalTime = datetime.time().fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
+                    departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
+                    arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
                     if d_multiairport:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportInfo').get('airportName')
                         departureName = dcityname + departureName.strip('成都')[:2]
@@ -340,19 +339,19 @@ class CtripCrawler(CivilAviation):
         return datarows
 
 
-    def show_progress(self, dcity: str, acity: str, collectDate: datetime.date) -> float:
+    def show_progress(self, dcity: str, acity: str, collectDate: date) -> float:
         '''Progress indicator with a current time (float) return'''
         m, s = divmod(int((self.__total - self.__idct) * self.__avgTime), 60)
         h, m = divmod(m, 60)
         print('\r{}% >>'.format(int(self.__idct / self.__total * 100)), 
               'eta {0:02d}:{1:02d}:{2:02d} >>'.format(h, m, s), 
               dcity + '-' + acity + ': ', end = collectDate.isoformat())
-        return time.time()
+        return datetime.now().timestamp()
 
     @staticmethod
     def output_excel(datarows: list, dcity: str, acity: str, path: Path = Path(), 
                      values_only: bool = False, with_return: bool = True) -> Path:
-        wbook = openpyxl.Workbook()
+        wbook = Workbook()
         wsheet = wbook.active
         wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
         
@@ -427,13 +426,11 @@ class CtripCrawler(CivilAviation):
         ignoreNew = set()
 
         '''Initialize running parameters'''
-        path = kwargs.get('path', Path(self.first_date) / Path(datetime.datetime.now().date().isoformat()))
+        path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
         if not isinstance(path, Path):
             path = Path(str(path))
         if not path.exists():
-            if not path.parent.exists():
-                Path.mkdir(path.parent)
-            Path.mkdir(path)
+            path.mkdir(parents = True, exist_ok = True)
         values_only: bool = kwargs.get('values_only', False)
         from_city: str = kwargs.get('from_city', None)
         to_city: str = kwargs.get('to_city', None)
@@ -520,7 +517,7 @@ class CtripCrawler(CivilAviation):
 
                     collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
                     self.__idct += 1
-                    self.__avgTime = (time.time() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
+                    self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
                 else:
                     if with_output:
                         print(f'\r{dcityname}-{acityname} generated', end = '')
@@ -560,7 +557,7 @@ if __name__ == "__main__":
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数: 是否输出文件 (否: 生成列表) 、存储路径、是否带格式
-    crawler = CtripCrawler(cities, datetime.date(2022,2,17), 30, 0, ignore_cities, ignore_threshold, True, proxyurl)
+    crawler = CtripCrawler(cities, date(2022,2,17), 30, 0, ignore_cities, ignore_threshold, True, proxyurl)
     for data in crawler.run():
         pass
     else:
