@@ -175,15 +175,25 @@ class CtripCrawler(CivilAviation):
         ignore_cities = set()
         for i in range(self.__codesum):
             for j in range(i, self.__codesum):
-                if i == j:
-                    ignore_cities.add((i, j))
-                if self.cityList[i] == self.cityList[j] or \
+                # If the city tuple is the same or found in the set, do not process.
+                if i == j or self.cityList[i] == self.cityList[j] or \
                     (self.cityList[i], self.cityList[j]) in ignore_routes or \
                     (self.cityList[j], self.cityList[i]) in ignore_routes:
-                    # If the city tuple is the same or found in the set, do not process.
                     ignore_cities.add((i, j))
-        self.__total -= self.days * len(ignore_cities)
         return ignore_cities
+
+    @property
+    def coordinates(self) -> list[tuple[int, int]]:
+        '''Get matrix-like coordinates (dep city index, arr city index), and dcity > acity'''
+        ignore_cities = self.skip
+        coordinates = []
+        for i in range(self.__codesum):
+            for j in range(i, self.__codesum):
+                if (i, j) in ignore_cities:
+                    continue
+                else:
+                    coordinates.append(i, j)
+        return coordinates
 
     @staticmethod
     def exits(code: int = 0) -> None:
@@ -363,14 +373,13 @@ class CtripCrawler(CivilAviation):
         
         Collect Parameters
         -----
-        - Collect all data or select a range? (matrix-like)
+        - Parts of data collection, for multi-threading.
         
-        from_city: `str`, default: `None`
+        parts: `int`, the total number of parts, default: 0
         
-        to_city: `str`, default: `None`
+        part: `int`, the index of the running part, default: 0
         '''
         print('\rGetting data...')
-        ignore_cities = self.skip
         filesum = 0
         ignoreNew = set()
 
@@ -381,52 +390,60 @@ class CtripCrawler(CivilAviation):
         if not path.exists():
             path.mkdir(parents = True, exist_ok = True)
         values_only: bool = kwargs.get('values_only', False)
-        from_city: str = kwargs.get('from_city', None)
-        to_city: str = kwargs.get('to_city', None)
-        if from_city and isinstance(from_city, str):
-            try:
-                start_index = self.cityList.index(from_city)
-                for dcity in range(start_index):
-                    for acity in range(dcity, self.__codesum):
-                        if (dcity, acity) not in ignore_cities:
-                            self.__total -= self.days
-            except:
-                start_index = 0
-        else:
-            start_index = 0
-        if to_city and isinstance(to_city, str):
-            try:
-                end_index = self.cityList.index(to_city) + 1
-                for dcity in range(end_index, self.__codesum):
-                    for acity in range(dcity, self.__codesum):
-                        if (dcity, acity) not in ignore_cities:
-                            self.__total -= self.days
-            except:
-                end_index = self.__codesum
-        else:
-            end_index = self.__codesum
-
+        parts: int = kwargs.get('parts', 0)
+        part: int = kwargs.get('part', 0)
+        coordinates = self.coordinates
+        try:
+            if part and parts and isinstance(part, int) and isinstance(parts, int):
+                    part_len = int(len(coordinates) / parts)
+                    if part == 1:
+                        coordinates = coordinates[ : part * part_len]
+                    elif part == parts:
+                        coordinates = coordinates[(part - 1) * part_len : ]
+                    else:
+                        coordinates = coordinates[(part - 1) * part_len : part * part_len]
+        finally:
+            self.__total = len(coordinates) * self.days
+        
         '''Data collecting controller'''
-        for dcity in range(start_index, end_index):
-            for acity in range(dcity, self.__codesum):
-                if (dcity, acity) in ignore_cities:
-                    continue    # If the city tuple key / coordinate is not found, process.
-                if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
-                    print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
-                    self.__total -= self.days
-                    continue    # Already processed.
-                collectDate = self.flightDate   #reset
-                datarows = []
-                for i in range(self.days):
-                    dcityname = self.cityList[dcity]
-                    acityname = self.cityList[acity]
-                    currTime = self.show_progress(dcityname, acityname, collectDate)
+        for acity, dcity in coordinates:
+            if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
+                print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
+                self.__total -= self.days
+                continue    # Already processed.
+            collectDate = self.flightDate   #reset
+            datarows = []
+            for i in range(self.days):
+                dcityname = self.cityList[dcity]
+                acityname = self.cityList[acity]
+                currTime = self.show_progress(dcityname, acityname, collectDate)
 
-                    '''Get OUTbound flights data, 3 attempts for ample data'''
+                '''Get OUTbound flights data, 3 attempts for ample data'''
+                for j in range(3):
+                    data_diff = len(datarows)
+                    datarows.extend(self.collector(collectDate, dcityname, acityname))
+                    data_diff = len(datarows) - data_diff
+                    if data_diff >= self.ignore_threshold:
+                        break
+                    elif i != 0 and data_diff > 0:
+                        break
+                    elif j == 1:
+                        print(' ...retry', end = '')
+                else:
+                    if i == 0 and data_diff < self.ignore_threshold:
+                        self.__total -= self.days
+                        print(' ...ignored')
+                        ignoreNew.add((dcityname, acityname))
+                        break
+                    elif data_diff < self.ignore_threshold:
+                        print('\tWarn: few data on ', end = collectDate.isoformat())
+                        self.__warn += 1
+
+                '''Get INbound flights data, 3 attempts for ample data'''
+                if self.with_return:
                     for j in range(3):
                         data_diff = len(datarows)
-                        datarows.extend(self.collector(collectDate, dcityname, acityname))
-                        data_diff = len(datarows) - data_diff
+                        datarows.extend(self.collector(collectDate, acityname, dcityname))
                         if data_diff >= self.ignore_threshold:
                             break
                         elif i != 0 and data_diff > 0:
@@ -437,45 +454,24 @@ class CtripCrawler(CivilAviation):
                         if i == 0 and data_diff < self.ignore_threshold:
                             self.__total -= self.days
                             print(' ...ignored')
-                            ignoreNew.add((dcityname, acityname))
+                            ignoreNew.add((acityname, dcityname))
                             break
                         elif data_diff < self.ignore_threshold:
                             print('\tWarn: few data on ', end = collectDate.isoformat())
                             self.__warn += 1
 
-                    '''Get INbound flights data, 3 attempts for ample data'''
-                    if self.with_return:
-                        for j in range(3):
-                            data_diff = len(datarows)
-                            datarows.extend(self.collector(collectDate, acityname, dcityname))
-                            if data_diff >= self.ignore_threshold:
-                                break
-                            elif i != 0 and data_diff > 0:
-                                break
-                            elif j == 1:
-                                print(' ...retry', end = '')
-                        else:
-                            if i == 0 and data_diff < self.ignore_threshold:
-                                self.__total -= self.days
-                                print(' ...ignored')
-                                ignoreNew.add((acityname, dcityname))
-                                break
-                            elif data_diff < self.ignore_threshold:
-                                print('\tWarn: few data on ', end = collectDate.isoformat())
-                                self.__warn += 1
-
-                    collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
-                    self.__idct += 1
-                    self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
+                collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
+                self.__idct += 1
+                self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
+            else:
+                if with_output:
+                    print(f'\r{dcityname}-{acityname} generated', end = '')
+                    self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
+                    print('!                         ') if values_only else print(' and formatted!           ')
+                    filesum += 1
                 else:
-                    if with_output:
-                        print(f'\r{dcityname}-{acityname} generated', end = '')
-                        self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
-                        print('!                         ') if values_only else print(' and formatted!           ')
-                        filesum += 1
-                    else:
-                        print(f'\r{dcityname}-{acityname} collected!                         ') 
-                    yield datarows
+                    print(f'\r{dcityname}-{acityname} collected!                         ') 
+                yield datarows
 
         if with_output:
             if self.output_new_ignorance(self.ignore_threshold, ignoreNew):

@@ -25,7 +25,7 @@ if __name__ == "__main__":
     sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
     
     
-    for data in crawler.run():
+    for data in crawler.run(part = 0, parts = 0):
         if not path:
             path = crawler.file.parent
         if Preprocessor(list = data, path = path, file_name = crawler.file.name).run():
