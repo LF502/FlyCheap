@@ -1,5 +1,6 @@
 from ctripcrawler import CtripCrawler
 from preprocessor import Preprocessor
+from civilaviation import CivilAviation
 from zipfile import ZipFile
 from datetime import date
 from pathlib import Path
@@ -15,7 +16,7 @@ if __name__ == "__main__":
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
     flightDate = date(2022, 2, 17)
     ignore_threshold = 0
-    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')} | super(CtripCrawler).skipped_routes
+    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')} | CivilAviation().skipped_routes
     path = None
     
     parameters = (cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
@@ -27,7 +28,10 @@ if __name__ == "__main__":
     for data in crawler.run():
         if not path:
             path = crawler.file.parent
-        Preprocessor(list = data, path = path, file_name = crawler.file.name).run()
+        if Preprocessor(list = data, path = path, file_name = crawler.file.name).run():
+            print('Preprocessed!')
+        else:
+            print('Preprocess skipped...')
     
     orig_folder = path / Path(".orig")
     if not orig_folder.exists():

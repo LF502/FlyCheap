@@ -92,9 +92,9 @@ class Preprocessor(CivilAviation):
             elif kwargs.get('dict', False):
                 self.data = pandas.DataFrame(kwargs.get('dict'))
             else:
-                raise ValueError('No data!')
+                print('WARN: No data!')
         except:
-            raise ValueError('No data!')
+            print('WARN: No data!')
         self.__collDate: int = self.__collDate.toordinal()
 
     @property
@@ -430,8 +430,12 @@ class Preprocessor(CivilAviation):
         return data
 
 
-    def run(self):
-        self.exporter(self.converter())
+    def run(self) -> bool:
+        try:
+            self.exporter(self.converter())
+            return True
+        except:
+            return False
 
 
 if __name__ == '__main__':

@@ -18,7 +18,7 @@ if __name__ == "__main__":
     ignore_cities = None
     path = None
     
-    parameters = (cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
+    parameters = (cities, flightDate, 45, 46, ignore_cities, ignore_threshold)
     
     sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
     crawler = CtripCrawler(*parameters)
@@ -26,7 +26,10 @@ if __name__ == "__main__":
     for data in crawler.run():
         if not path:
             path = crawler.file.parent
-        Preprocessor(list = data, path = path, file_name = crawler.file.name).run()
+        if Preprocessor(list = data, path = path, file_name = crawler.file.name).run():
+            print('Preprocessed!')
+        else:
+            print('Preprocess skipped...')
     
     orig_folder = path / Path(".orig")
     if not orig_folder.exists():
