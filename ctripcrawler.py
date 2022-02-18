@@ -192,7 +192,7 @@ class CtripCrawler(CivilAviation):
                 if (i, j) in ignore_cities:
                     continue
                 else:
-                    coordinates.append(i, j)
+                    coordinates.append((i, j))
         return coordinates
 
     @staticmethod
@@ -394,19 +394,15 @@ class CtripCrawler(CivilAviation):
         part: int = kwargs.get('part', 0)
         coordinates = self.coordinates
         try:
-            if part and parts and isinstance(part, int) and isinstance(parts, int):
-                    part_len = int(len(coordinates) / parts)
-                    if part == 1:
-                        coordinates = coordinates[ : part * part_len]
-                    elif part == parts:
-                        coordinates = coordinates[(part - 1) * part_len : ]
-                    else:
-                        coordinates = coordinates[(part - 1) * part_len : part * part_len]
+            if part > 0 and parts > 1:
+                part_len = int(len(coordinates) / parts)
+                coordinates = coordinates[(parts - 1) * part_len : ] if part >= parts \
+                    else coordinates[(part - 1) * part_len : part * part_len]
         finally:
             self.__total = len(coordinates) * self.days
         
         '''Data collecting controller'''
-        for acity, dcity in coordinates:
+        for dcity, acity in coordinates:
             if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
                 print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
                 self.__total -= self.days
