@@ -5,3 +5,11 @@ __pycache__
 .preproc
 .notes
 *.log
+*.txt
+
+*.2.py
+*.4.py
+*.5.py
+*.6.py
+*.8.py
+*.10.py
