@@ -432,7 +432,7 @@ class CtripCrawler(CivilAviation):
                         ignoreNew.add((dcityname, acityname))
                         break
                     elif data_diff < self.ignore_threshold:
-                        print('\tWarn: few data on ', end = collectDate.isoformat())
+                        print('\tWARN: few data on ', end = collectDate.isoformat())
                         self.__warn += 1
 
                 '''Get INbound flights data, 3 attempts for ample data'''
@@ -453,7 +453,7 @@ class CtripCrawler(CivilAviation):
                             ignoreNew.add((acityname, dcityname))
                             break
                         elif data_diff < self.ignore_threshold:
-                            print('\tWarn: few data on ', end = collectDate.isoformat())
+                            print('\tWARN: few data on ', end = collectDate.isoformat())
                             self.__warn += 1
 
                 collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
