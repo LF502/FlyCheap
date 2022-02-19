@@ -22,9 +22,11 @@ class Rebuilder(CivilAviation):
     
     Data
     -----
-    `append`: Append a excel file in `Path`.
+    `append_file`: Append a excel file in `Path`.
     
-    `zip`: Load excel files from a zip file in the given path.
+    `append_folder`: Append excel files from folders in `Path`.
+    
+    `append_zip`: Load excel files from zip files in `Path`.
     
     Parameters
     -----
@@ -84,7 +86,7 @@ class Rebuilder(CivilAviation):
         try:
             datetime.fromisoformat(file.parent.name)
         except:
-            print("WARN: File not in a standard path name of collecting date!")
+            print(f"WARN: {file.name} is not a standard path name of collecting date!")
             return None
         if file.match("*.xlsx"):
             self.__files.append(file)
@@ -98,57 +100,75 @@ class Rebuilder(CivilAviation):
         
         Return the number of excels loaded.'''
         files = 0
+        if len(paths) == 0:
+            paths = []
+            for path in self.__root.iterdir():
+                if path.is_dir():
+                    paths.append(path)
         for path in paths:
-            if isinstance(file, str):
-                path = self.__root / Path(path)
-            else:
+            path = Path(path)
+            if self.__root != path.parent:
                 path = self.__root / path
             try:
-                datetime.fromisoformat(path.name)
+                if path.is_dir():
+                    datetime.fromisoformat(path.name)
+                else:
+                    print(f"WARN: {path.name} should be an existing folder!")
+                    self.__warn += 1
+                    continue
             except:
-                print("WARN: File not in a standard path name of collecting date!")
-                return files
+                print(f"WARN: {path.name} is not a standard path name of collecting date!")
+                self.__warn += 1
+                continue
+            
             for file in path.iterdir():
                 if file.match("*.xlsx") and "_" not in file.name:
                     self.__files.append(file)
                     files += 1
         return files
     
-    def append_zip(self, *paths: Path | str, file: Path | str = "orig.zip") -> int:
+    def append_zip(self, *paths: Path | str, file_name: str = "orig.zip") -> int:
         '''
         Append data from a zip file to process.
         
         - paths: `Path`, where to find and extract the zip file in `root`.
         
+                default: all folders in the `root`
+        
         - file: `Path` | `str`, the zip file path or name.
         
                 default: `orig.zip` as a collection's extract.
         
-        return the number of excels loaded.
+        Return the number of excels loaded.
         '''
         files = 0
+        if len(paths) == 0:
+            paths = []
+            for path in self.__root.iterdir():
+                if path.is_dir():
+                    paths.append(path)
         for path in paths:
-            if isinstance(path, str):
-                path = self.__root / Path(path)
-            else:
+            path = Path(path)
+            if self.__root != path.parent:
                 path = self.__root / path
             try:
                 if path.is_dir():
                     datetime.fromisoformat(path.name)
                 else:
-                    print(f"Warn: {path.name} should be a folder!")
+                    print(f"WARN: {path.name} should be an existing folder!")
                     self.__warn += 1
                     continue
             except:
-                print(f"Warn: {path.name} is not a standard path name of collecting date!")
+                print(f"WARN: {path.name} is not a standard path name of collecting date!")
                 self.__warn += 1
                 continue
+            
             try:
-                zip = ZipFile(path / Path(file), "r") if isinstance(file, str) else ZipFile(file, "r")
+                zip = ZipFile(path / Path(file_name), "r")
                 zip.extractall(path)
                 zip.close
             except:
-                print(f"Warn: {file} cannot be loaded in", path.name)
+                print(f"WARN: {file_name} cannot be loaded in", path.name)
                 self.__warn += 1
                 continue
             for item in path.iterdir():
@@ -638,7 +658,7 @@ class Rebuilder(CivilAviation):
                 try:
                     value = names[40 * (column - 2) + row - 2]
                     cell = ws.cell(row, column, value)
-                    cell.hyperlink = f'#\'{value}\'!A2'
+                    cell.hyperlink = f'#\'{value}\'!A1'
                     cell.font = Font(u = 'single', color = "0070C0")
                 except:
                     break
@@ -912,11 +932,13 @@ class Rebuilder(CivilAviation):
         return workbook
     
     def output(self, *args: tuple[str, Workbook],
-               clear: bool = False, path: Path | str = Path('.charts')) -> int:
+               clear: bool = False, path: Path | str = '.charts') -> int:
         """
         Data
         -----
         Output rebuilt data by methods return (data name: `str`, excel: `Workbook`).
+        
+        Return the number of files outputed.
         
         Parameters
         -----
@@ -955,9 +977,8 @@ class Rebuilder(CivilAviation):
 
 
 if __name__ == "__main__":
-    rebuild = Rebuilder(Path("2022-02-17"), 45)
-    rebuild.append_zip("2022-02-12")
-    rebuild.output(rebuild.time())
-    
+    rebuild = Rebuilder(Path("2022-03-29"), 45)
+    print(rebuild.append_zip(), 'excels has been loaded.')
+    rebuild.output(rebuild.buyday())
     print("Total warning(s):", rebuild.reset())
     
