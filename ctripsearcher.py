@@ -6,6 +6,7 @@ from requests import get, post
 from json import dumps
 from pathlib import Path
 from ctripcrawler import CtripCrawler
+from civilaviation import CivilAviation
 
 class CtripSearcher(CtripCrawler):
     """
@@ -18,13 +19,14 @@ class CtripSearcher(CtripCrawler):
                  with_return: bool = True, proxy: str | bool = None) -> None:
 
         CtripCrawler.__init__(self, cityList, flightDate, days, day_limit, ignore_cities, ignore_threshold, with_return, proxy)
-        self.__airData = super(CtripCrawler)
+        self.__airData = CivilAviation()
 
         self.__dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
 
-        self.__codesum = len(cityList)
-        self.__total = self.__codesum * (self.__codesum - 1) * self.days / 2
         self.url = "https://flights.ctrip.com/international/search/api/search/batchSearch"
+        
+        self.__codesum = len(cityList)
+        self.__total = self.__codesum * (self.__codesum + 1) * self.days / 2
 
 
     def __sizeof__(self) -> int:
@@ -43,14 +45,14 @@ class CtripSearcher(CtripCrawler):
         return bfa
 
     @staticmethod
-    def sign(transaction_id, dep: str, arr: str, flightDate: str):
+    def sign(transaction_id, dep: str, arr: str, flightDate: str) -> str:
         sign_value = transaction_id + dep + arr + flightDate
         _sign = hashlib.md5()
         _sign.update(sign_value.encode('utf-8'))
         return _sign.hexdigest()
 
     @staticmethod
-    def transaction_id(dep: str, arr: str, date: str, proxy: dict = None):
+    def transaction_id(dep: str, arr: str, date: str, proxy: dict = None) -> tuple[str, dict]:
         url = f"https://flights.ctrip.com/international/search/api/flightlist/oneway-{dep}-{arr}?_=1&depdate={date}&cabin=y&containstax=1"
         response = get(url, proxies = proxy)
         if response.status_code != 200:
@@ -67,7 +69,7 @@ class CtripSearcher(CtripCrawler):
 
 
 
-    def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list():
+    def collector(self, flightDate: datetime.date, dcity: str, acity: str) -> list[list]:
         datarows = list()
         departureName = dcityname = self.__airData.from_code(dcity)
         arrivalName = acityname = self.__airData.from_code(acity)
