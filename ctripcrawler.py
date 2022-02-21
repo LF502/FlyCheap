@@ -220,7 +220,7 @@ class CtripCrawler():
                 proxy = {"http": "http://" + proxy.text.strip()}
         except:
             proxy = None
-            print('\tWARN: no proxy', end='')
+            print(' WARN: no proxy', end='')
             time.sleep((round(3 * random(), 2)))
         finally:
             return proxy
@@ -292,8 +292,8 @@ class CtripCrawler():
                     datarows.append([flightDate, dow, airlineName, craftType, departureName, arrivalName, 
                                         departureTime, arrivalTime, price, rate, ])
                         # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
-            except Exception as dataError:
-                print('\tWARN:', dataError, 'at', flightDate.isoformat(), end = '')
+            except Exception as error:
+                print(' WARN:', error, f'in {dcity}-{acity} ', end = flightDate.isoformat())
                 self.__warn += 1
         return datarows
 
@@ -302,8 +302,8 @@ class CtripCrawler():
         '''Progress indicator with a current time (float) return'''
         m, s = divmod(int((self.__total - self.__idct) * self.__avgTime), 60)
         h, m = divmod(m, 60)
-        print(f'{dcity}-{acity} >> eta {h:02d}:{m:02d}:{s:02d} >>', 
-              end = f'\r{int(self.__idct / self.__total * 100):03d}%')
+        print(f'\r{dcity}-{acity} >> eta {h:02d}:{m:02d}:{s:02d} >> ', 
+              end = f'{int(self.__idct / self.__total * 100):03d}%')
         return datetime.now().timestamp()
 
     @staticmethod
@@ -427,11 +427,11 @@ class CtripCrawler():
                 else:
                     if i == 0 and data_diff < self.ignore_threshold:
                         self.__total -= self.days
-                        print(' ...ignored')
+                        print(f'\r{dcityname}-{acityname} has {data_diff} flight(s), ignored. ')
                         ignoreNew.add((dcityname, acityname))
                         break
                     elif data_diff < self.ignore_threshold:
-                        print('\tWARN: few data on ', end = collectDate.isoformat())
+                        print(f' WARN: few data in {dcityname}-{acityname} ', end = collectDate.isoformat())
                         self.__warn += 1
 
                 '''Get INbound flights data, 3 attempts for ample data'''
@@ -448,11 +448,11 @@ class CtripCrawler():
                     else:
                         if i == 0 and data_diff < self.ignore_threshold:
                             self.__total -= self.days
-                            print(' ...ignored')
+                            print(f'\r{acityname}-{dcityname} has {data_diff} flight(s), ignored. ')
                             ignoreNew.add((acityname, dcityname))
                             break
                         elif data_diff < self.ignore_threshold:
-                            print('\tWARN: few data on ', end = collectDate.isoformat())
+                            print(f' WARN: few data in {acityname}-{dcityname} ', end = collectDate.isoformat())
                             self.__warn += 1
 
                 collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
