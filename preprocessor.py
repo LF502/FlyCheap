@@ -3,7 +3,7 @@ import datetime
 from pathlib import Path
 from civilaviation import CivilAviation
 
-class Preprocessor(CivilAviation):
+class Preprocessor():
     '''
     Import data from excel or list or dict, and preprocess all data
     
