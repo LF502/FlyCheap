@@ -6,7 +6,7 @@ from zipfile import ZipFile
 from pathlib import Path
 from civilaviation import CivilAviation
 
-class Rebuilder(CivilAviation):
+class Rebuilder():
     '''
     Rebuilder
     -----
