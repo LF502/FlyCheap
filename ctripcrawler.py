@@ -9,7 +9,7 @@ from openpyxl.cell import Cell
 from pathlib import Path
 from civilaviation import CivilAviation
 
-class CtripCrawler(CivilAviation):
+class CtripCrawler():
     """
     Ctrip flight tickets crawler
     
@@ -235,7 +235,7 @@ class CtripCrawler(CivilAviation):
         return self.__userAgents[int(self.__lenAgents * random())]
 
 
-    def collector(self, flightDate: date, dcity: str, acity: str) -> list():
+    def collector(self, flightDate: date, dcity: str, acity: str) -> list[list]:
         proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
         datarows = list()
         departureName = dcityname = self.__airData.from_code(dcity)
