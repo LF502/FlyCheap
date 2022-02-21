@@ -32,4 +32,4 @@ if __name__ == "__main__":
         if not path:
             path = crawler.file.parent
         if not Preprocessor(list = data, path = path, file_name = crawler.file.name).run():
-            print('WARN: Preprocess skipped...')
+            print(f'WARN: {crawler.file.name} preprocess skipped...')
