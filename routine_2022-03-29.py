@@ -1,9 +1,8 @@
 from ctripcrawler import CtripCrawler
 from preprocessor import Preprocessor
-from zipfile import ZipFile
 from datetime import date
-from pathlib import Path
 from __init__ import Log
+from argparse import ArgumentParser
 import sys
 
 if __name__ == "__main__":
@@ -23,7 +22,12 @@ if __name__ == "__main__":
     sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
     crawler = CtripCrawler(*parameters)
     
-    for data in crawler.run(part = 0, parts = 0):
+    parser = ArgumentParser(description = "Input separations - by the number of part and total parts")
+    parser.add_argument("--part", type = int, default = 0)
+    parser.add_argument("--parts", type = int, default = 0)
+    parse_args = parser.parse_args()
+    
+    for data in crawler.run(part = parse_args.part, parts = parse_args.parts):
         if not path:
             path = crawler.file.parent
         if not Preprocessor(list = data, path = path, file_name = crawler.file.name).run():
