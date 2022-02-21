@@ -196,12 +196,12 @@ class CtripCrawler():
         return coordinates
 
     @staticmethod
-    def exits(code: int = 0) -> None:
+    def exits(__code: int = 0) -> None:
         '''Exit program with a massage'''
         import sys
         error_code = {0: 'reaching exit point', 1: 'empty or incorrect data', 
                       2: 'city tuple error',3:'day limit error', 4: 'no flight'}
-        print(f' Exited for {error_code[code]}')
+        print(f' Exited for {error_code[__code]}')
         sys.exit()
 
     @property
@@ -298,13 +298,12 @@ class CtripCrawler():
         return datarows
 
 
-    def show_progress(self, dcity: str, acity: str, collectDate: date) -> float:
+    def show_progress(self, dcity: str, acity: str) -> float:
         '''Progress indicator with a current time (float) return'''
         m, s = divmod(int((self.__total - self.__idct) * self.__avgTime), 60)
         h, m = divmod(m, 60)
-        print('\r{}% >>'.format(int(self.__idct / self.__total * 100)), 
-              'eta {0:02d}:{1:02d}:{2:02d} >>'.format(h, m, s), 
-              dcity + '-' + acity + ': ', end = collectDate.isoformat())
+        print(f'{dcity}-{acity} >> eta {h:02d}:{m:02d}:{s:02d} >>', 
+              end = f'\r{int(self.__idct / self.__total * 100):03d}%')
         return datetime.now().timestamp()
 
     @staticmethod
@@ -412,7 +411,7 @@ class CtripCrawler():
             for i in range(self.days):
                 dcityname = self.cityList[dcity]
                 acityname = self.cityList[acity]
-                currTime = self.show_progress(dcityname, acityname, collectDate)
+                currTime = self.show_progress(dcityname, acityname)
 
                 '''Get OUTbound flights data, 3 attempts for ample data'''
                 for j in range(3):
@@ -463,12 +462,12 @@ class CtripCrawler():
                 if with_output:
                     self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
                     if values_only:
-                        print(f'\r{dcityname}-{acityname} generated!                         ')
+                        print(f'\r{dcityname}-{acityname} generated!               ')
                     else:
-                        print(f'\r{dcityname}-{acityname} generated and formatted!           ')
+                        print(f'\r{dcityname}-{acityname} generated and formatted! ')
                     filesum += 1
                 else:
-                    print(f'\r{dcityname}-{acityname} collected!                         ') 
+                    print(f'\r{dcityname}-{acityname} collected!               ') 
                 yield datarows
 
         if with_output:
