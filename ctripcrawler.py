@@ -461,9 +461,11 @@ class CtripCrawler():
                 self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
             else:
                 if with_output:
-                    print(f'\r{dcityname}-{acityname} generated', end = '')
                     self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
-                    print('!                         ') if values_only else print(' and formatted!           ')
+                    if values_only:
+                        print(f'\r{dcityname}-{acityname} generated!                         ')
+                    else:
+                        print(f'\r{dcityname}-{acityname} generated and formatted!           ')
                     filesum += 1
                 else:
                     print(f'\r{dcityname}-{acityname} collected!                         ') 
