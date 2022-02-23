@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import overload
+
 class CivilAviation: 
     '''
     Database for Civil Aviation
@@ -79,7 +82,7 @@ class CivilAviation:
             '怀化': 'HJJ', '黄山': 'TXN', '惠州': 'HUZ', '鸡西': 'JXA', 
             '济南': 'TNA', '济宁': 'JNG', '加格达奇': 'JGD', '佳木斯': 'JMU',
             '嘉峪关': 'JGN', '金昌': 'JIC', '金门': 'KNH', '锦州': 'JNZ', 
-            '嘉义': 'CYI', '西双版纳': 'JHG', '建三江': 'JSJ', '晋江': 'JJN',
+            '嘉义': 'CYI', '西双版纳': 'JHG', '建三江': 'JSJ', '泉州': 'JJN',
             '井冈山': 'JGS', '景德镇': 'JDZ', '九江': 'JIU', '九寨沟': 'JZH', 
             '喀什': 'KHG', '凯里': 'KJH', '康定': 'KGT', '克拉玛依': 'KRY',
             '库车': 'KCA', '库尔勒': 'KRL', '昆明': 'KMG', '拉萨': 'LXA', 
@@ -100,7 +103,7 @@ class CivilAviation:
             '通辽': 'TGO', '铜仁': 'TEN', '吐鲁番': 'TLQ', '万州': 'WXN',
             '威海': 'WEH', '潍坊': 'WEF', '温州': 'WNZ', '文山': 'WNH', 
             '乌海': 'WUA', '乌兰浩特': 'HLH', '乌鲁木齐': 'URC', '无锡': 'WUX',
-            '梧州': 'WUZ', '武汉': 'WUH', '武夷山': 'WUS', '西安': 'SIA', 
+            '梧州': 'WUZ', '武汉': 'WUH', '武夷山': 'WUS', '西安': 'XIY', 
             '西昌': 'XIC', '西宁': 'XNN', '锡林浩特': 'XIL', '迪庆': 'DIG', 
             '襄阳': 'XFN', '兴义': 'ACX', '徐州': 'XUZ', '香港': 'HKG', 
             '烟台': 'YNT', '延安': 'ENY', '延吉': 'YNJ', '盐城': 'YNZ',
@@ -110,7 +113,7 @@ class CivilAviation:
             '张家界': 'DYG', '张家口': 'ZQZ', '张掖': 'YZY', '昭通': 'ZAT', 
             '郑州': 'CGO', '中卫': 'ZHY', '舟山': 'HSN', '珠海': 'ZUH', 
             '遵义(茅台)': 'WMT', '遵义(新舟)': 'ZYI', '遵义': 'ZYI',
-            '香格里拉(迪庆)': 'DIG', '香格里拉': 'DIG', 
+            '香格里拉(迪庆)': 'DIG', '香格里拉': 'DIG', '呼伦贝尔': 'HLD',
             }
 
         self.airports = {
@@ -189,7 +192,7 @@ class CivilAviation:
         self.tourism = {
             '桂林', '西双版纳', '丽江', '张家界', '鄂尔多斯', '呼伦贝尔', '德宏', 
             '大理', '拉萨', '乌鲁木齐', '成都', '重庆', '贵阳', '昆明', '迪庆', 
-            '香格里拉', 
+            '香格里拉', '西安', '稻城'
             }
 
         self.__airfare = {
@@ -376,16 +379,26 @@ class CivilAviation:
             ('SHE', 'INC'), ('CGQ', 'URC'), ('HFE', 'LHW'), ('CZX', 'CSX'), 
             ('WUX', 'INC'), ('INC', 'DLC'), ('SJW', 'DLC'), ('SHE', 'LHW'), 
             }
-        
-
-    def get_airfare(self, dep: str, arr: str, /) -> int:
+    
+    def get_airfare(self, *args) -> int:
         '''Get route's airfare from dep city to arr city'''
-        if self.__airfare.get((dep, arr), 0):
-            return self.__airfare.get((dep, arr))
-        elif self.__airfare.get((arr, dep), 0):
-            return self.__airfare.get((arr, dep))
-        else:   return 0
-
+        if len(args) == 1:
+            arg = args[0]
+            if isinstance(arg, Path):
+                arg = arg.name
+            return self.get_airfare(arg[:3], arg[4:7])
+        elif len(args) == 2:
+            arr, dep = args
+            if not (arr.isupper() and dep.isupper()):
+                dep = self.to_code(self.from_name(dep))
+                arr = self.to_code(self.from_name(arr))
+            if self.__airfare.get((dep, arr), 0):
+                return self.__airfare.get((dep, arr))
+            else:
+                return self.__airfare.get((arr, dep), 0)
+        else:
+            return None
+    
     @staticmethod
     def is_multiairport(__str: str) -> bool:
         return True if '北京' in __str or '上海' in __str \
