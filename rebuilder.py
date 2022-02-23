@@ -1,3 +1,4 @@
+from numpy import average, sum
 import pandas
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -19,6 +20,10 @@ class Rebuilder():
     - `flyday`: Dates and weekdays of flight are fixed;
     - `time`: Dep time of flights;
     - `type`: Aircraft type.
+    
+    Merger
+    -----
+    Merge all rebuilt data to `pandas.DataFrame`
     
     Data
     -----
@@ -42,6 +47,28 @@ class Rebuilder():
     def __init__(self, root: Path = Path(), day_limit: int = 0) -> None:
         
         self.__airData = CivilAviation()
+        self.__merged = []
+        
+        self.__header = {
+            'date_flight': '航班日期', 'day_week': '星期', 
+            'date_coll': '收集日期', 'day_adv': '提前天数', 
+            'airline': '航司', 'airlines': '运营航司', 'type': '机型', 
+            
+            'dep': '出发机场', 'arr': '到达机场', 'route': '航线', 
+            'time_dep': '出发时刻', 'time_arr': '到达时刻', 'hour_dep': '出发时段', 
+            'density_day': '日航班数', 'density_hour': '时段密度', 
+            'comp_hour': '时段竞争', 'comp_day': '日竞争', 
+            
+            
+            'count': '总计', 'route_count': '航线计数', 'type_count': '机型计数', 
+            'date_flight_count': '日期计数', 'date_coll_count': '收集计数', 
+            
+            'price_total': '全价', 'price': '价格', 'price_rate': '折扣', 
+            
+            'ratio_daily_hour': '当日系数', 
+            'mid_price_rate': '折扣中位', 'avg_price_rate': '折扣平均', 
+            'mid_ratio_price': '系数中位', 'avg_ratio_price': '系数平均', 
+        }
         
         self.__day_limit = day_limit
         self.__root = root
@@ -94,7 +121,7 @@ class Rebuilder():
         else:
             return None
     
-    def append_folder(self, *paths: Path | str) -> int:
+    def append_folder(self, *paths: Path | str, count: int = 0) -> int:
         '''Load files from a folder, 
         whose name should be data's collecting date.
         
@@ -125,6 +152,8 @@ class Rebuilder():
                 if file.match("*.xlsx") and "_" not in file.name:
                     self.__files.append(file)
                     files += 1
+                if count and files >= count:
+                    break
         return files
     
     def append_zip(self, *paths: Path | str, file_name: str = "orig.zip") -> int:
@@ -178,7 +207,7 @@ class Rebuilder():
                     self.__unlink.append(item)
         return files
     
-    def reset(self, unlink_file: bool = True, clear_rebuilt: bool = True) -> int:
+    def reset(self, unlink_file: bool = True, clear_rebuilt: bool = False) -> int:
         '''
         Clear all files in the data process queue
         -----
@@ -211,9 +240,223 @@ class Rebuilder():
             self.master.clear()
             self.master = {"airline": {}, "city": {}, "flyday": {}, 
                            "buyday": {}, "time": {}, "type": {},}
+            self.__merged = []
         warn = self.__warn
         self.__warn = 0
         return warn
+    
+    
+    def merge(self) -> pandas.DataFrame:
+        total = len(self.__files)
+        if total == 0:
+            return None
+        datas = []
+        header = (
+            'date_flight', 'day_week', 'airline', 'type', 'dep',                            #04
+            'arr', 'time_dep', 'time_arr', 'price', 'price_rate')                           #09
+        idct, percent = 0, -1
+        for file in self.__files:
+            idct += 1
+            if percent != int(idct / total * 50):
+                percent = int(idct / total * 50)
+                print(f"\rmerging >> {percent:03d}", end = '%')
+            date_coll = pandas.Timestamp.fromisoformat(file.parent.name).toordinal()
+            data = pandas.read_excel(file, names = header).assign(date_coll = date_coll)    #10
+            
+            data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
+            data['day_adv'] = data['date_flight'] - date_coll                               #11
+            data['hour_dep'] = data['time_dep'].map(lambda x: x.hour if x.hour else 24)     #12
+            
+            if self.__airData.is_multiairport(file.name[:3]) or \
+                self.__airData.is_multiairport(file.name[4:7]):
+                data['route'] = data['dep'].map(lambda x: self.__airData.from_name(x)) + \
+                    '-' + data['arr'].map(lambda x: self.__airData.from_name(x))
+            else:
+                data['route'] = data['dep'] + '-' + data['arr']                             #13
+            datas.append(data.drop(data[data['day_adv'] > self.__day_limit].index))
+        
+        datas: pandas.DataFrame = pandas.concat(datas)
+        
+        '''hour ratio'''
+        '''day density'''
+        '''airline day competition'''
+        '''hour density'''
+        '''airline hour competition'''
+        hour_density = []
+        airline_hour_comp = []
+        ratio_daily_hour = []
+        day_density = []
+        airline_day_comp = []
+        cfdata = datas.groupby(["date_coll", "date_flight", "route"])
+        cfhdata = datas.groupby(["date_coll", "date_flight", 'hour_dep', "route"])
+        total, idct = len(datas.values), 0
+        
+        for value in datas.values:
+            idct += 1
+            if percent != int(idct / total * 50 + 50):
+                percent = int(idct / total * 50 + 50)
+                print(f"\rmerging >> {percent:03d}", end = '%')
+            
+            ratio_daily_hour.append(value[9] / cfdata.get_group((value[10], value[0], \
+                value[13]))['price_rate'].mean())
+            day_density.append(len(cfdata.get_group((value[10], value[0], value[13]))))
+            airline_day_comp.append(len(cfdata.get_group((value[10], value[0], \
+                value[13]))['airline'].unique()))
+            hour_density.append(len(cfhdata.get_group((value[10], value[0], \
+                value[12], value[13]))))
+            airline_hour_comp.append(len(cfhdata.get_group((value[10], value[0], \
+                value[12], value[13]))['airline'].unique()))
+        
+        datas.loc[: , 'ratio_daily_hour'] = ratio_daily_hour
+        datas.loc[: , 'density_day'] = day_density
+        datas.loc[: , 'comp_day'] = airline_day_comp
+        datas.loc[: , 'density_hour'] = hour_density
+        datas.loc[: , 'comp_hour'] = airline_hour_comp
+        
+        self.__merged = datas
+        print()
+        return datas
+    
+    def merge_route(self) -> tuple[tuple[str, pandas.DataFrame]]:
+        '''Route overview'''
+        if not len(self.__merged):
+            self.__merged = self.merge()
+        datas = self.__merged
+        overview = datas.groupby(["route"])
+        overviews = {
+            'route': [], 'count': [], 'date_flight_count': [], 'date_coll_count': [], 
+            'price_total': [], 'avg_price_rate': [], 'mid_price_rate': [], 
+            'airlines': [], 'density_hour': [], 'density_day': []}
+        route_density = {}
+        route_ratio = {}
+        route_adv_mean = {}
+        route_adv_std = {}
+        route_fdate_mean = {}
+        route_fdate_std = {}
+        for hour in range(5, 25):
+            route_density[hour] = []
+            route_ratio[hour] = []
+        for day in sorted(datas['day_adv'].unique()):
+            route_adv_mean[day] = []
+            route_adv_std[day] = []
+        for day in sorted(datas['date_flight'].unique()):
+            route_fdate_mean[day] = []
+            route_fdate_std[day] = []
+        for name, group in overview:
+            group: pandas.DataFrame
+            overviews['route'].append(name)
+            overviews['count'].append(len(group))
+            overviews['date_flight_count'].append(len(group['date_flight'].unique()))
+            overviews['date_coll_count'].append(len(group['date_coll'].unique()))
+            overviews['price_total'].append(self.__airData.get_airfare(*name.split('-', 1)))
+            overviews['avg_price_rate'].append(group['price_rate'].mean())
+            overviews['mid_price_rate'].append(group['price_rate'].median())
+            overviews['airlines'].append(len(group['airline'].unique()))
+            overviews['density_hour'].append(round(group['density_hour'].mean(), 2))
+            overviews['density_day'].append(round(group['density_day'].mean()))
+            for hour in range(5, 25):
+                hour_count = group['hour_dep'].value_counts().get(hour, 0)
+                route_density[hour].append(round(hour_count / len(group['hour_dep']), 2) \
+                    if hour_count else None)
+                hour_ratio = group.loc[group['hour_dep'] == hour, : ].get('ratio_daily_hour', 0).mean()
+                route_ratio[hour].append(round(hour_ratio, 2) if hour_ratio else None)
+            for day in route_adv_mean.keys():
+                mean = group.loc[group['day_adv'] == day, : ].get('price_rate', 0).mean()
+                route_adv_mean[day].append(mean if mean else None)
+                std = group.loc[group['day_adv'] == day, : ].get('price_rate', 0).std()
+                route_adv_std[day].append(std if std else None)
+            fdate_header = []
+            for day in route_fdate_mean.keys():
+                mean = group.loc[group['date_flight'] == day, : ].get('price_rate', 0).mean()
+                route_fdate_mean[day].append(mean if mean else None)
+                std = group.loc[group['date_flight'] == day, : ].get('price_rate', 0).std()
+                route_fdate_std[day].append(std if std else None)
+                fdate_header.append(pandas.Timestamp.fromordinal(day).date())
+                
+        route_overview = pandas.DataFrame(overviews)
+        route_density = pandas.DataFrame(route_density)
+        route_ratio = pandas.DataFrame(route_ratio)
+        route_adv_mean = pandas.DataFrame(route_adv_mean)
+        route_adv_std = pandas.DataFrame(route_adv_std)
+        route_fdate_mean = pandas.DataFrame(route_fdate_mean)
+        route_fdate_mean.set_axis(fdate_header, inplace = True, axis = 'columns')
+        route_fdate_std = pandas.DataFrame(route_fdate_std)
+        route_fdate_std.set_axis(fdate_header, inplace = True, axis = 'columns')
+        
+        return(
+            ('航线 - 时刻密度', pandas.concat([route_overview, route_density], axis = 1)), 
+            ('航线 - 时刻系数', pandas.concat([route_overview, route_ratio], axis = 1)), 
+            
+            ('航线 - 提前平均折扣', pandas.concat([route_overview, route_adv_mean], axis = 1)), 
+            ('航线 - 提前标准差', pandas.concat([route_overview, route_adv_std], axis = 1)), 
+            
+            ('航线 - 单日平均折扣', pandas.concat([route_overview, route_fdate_mean], axis = 1)), 
+            ('航线 - 单日标准差', pandas.concat([route_overview, route_fdate_std], axis = 1)), 
+        )
+        
+    
+    def merge_airline(self) -> tuple[tuple[str, pandas.DataFrame]]:
+        '''Airline overview'''
+        if not len(self.__merged):
+            self.__merged = self.merge()
+        datas = self.__merged
+        overview = datas.groupby(["airline"])
+        overviews = {
+            'airline': [], 'count': [], 'date_flight_count': [], 
+            'date_coll_count': [], 'density_day':[], 'route_count': [], 
+            'type_count': [], 'avg_ratio_price': [], 'mid_ratio_price': []}
+        airline_density = {}
+        airline_ratio = {}
+        for hour in range(5, 25):
+            airline_density[hour] = []
+            airline_ratio[hour] = []
+        for name, group in overview:
+            group: pandas.DataFrame
+            overviews['airline'].append(name)
+            overviews['count'].append(len(group))
+            overviews['date_flight_count'].append(len(group['date_flight'].unique()))
+            overviews['date_coll_count'].append(len(group['date_coll'].unique()))
+            overviews['density_day'].append(average(group[['date_coll', 'date_flight']].value_counts().values))
+            overviews['route_count'].append(len(group[['dep', 'arr']].drop_duplicates()) / 2)
+            overviews['type_count'].append(len(group['type'].unique()))
+            overviews['avg_ratio_price'].append(group['ratio_daily_hour'].mean())
+            overviews['mid_ratio_price'].append(group['ratio_daily_hour'].median())
+            for hour in range(5, 25):
+                hour_count = group['hour_dep'].value_counts().get(hour, 0)
+                airline_density[hour].append(round(hour_count / len(group['hour_dep']), 2) \
+                    if hour_count else None)
+                hour_ratio = group.loc[group['hour_dep'] == hour, : ].get('ratio_daily_hour', 0).mean()
+                airline_ratio[hour].append(round(hour_ratio, 2) if hour_ratio else None)
+        
+        airline_overview = pandas.DataFrame(overviews)
+        airline_density = pandas.DataFrame(airline_density)
+        airline_ratio = pandas.DataFrame(airline_ratio)
+        del overview, overviews
+        
+        return (
+            ('航司 - 时刻密度', pandas.concat([airline_overview, airline_density], axis = 1)), 
+            ('航司 - 时刻系数', pandas.concat([airline_overview, airline_ratio], axis = 1)), 
+        )
+    
+    
+    def merge_output(self, *args: tuple[str, pandas.DataFrame], 
+                     path: Path | str = '.charts') -> int:
+        '''Output merged data and return the number of sheets generated'''
+        sheets = 0
+        file = f"overview_{self.__root}.xlsx"
+        if isinstance(path, str):
+            path = Path(path)
+        path.mkdir(parents = True, exist_ok = True)
+        if (path / Path(file)).exists():
+            time = datetime.today().strftime("%H%M%S")
+            file.replace(".xlsx", f"_{time}.xlsx")
+        writer = pandas.ExcelWriter(path / Path(file), engine = "openpyxl")
+        for name, data in args:
+            data.rename(columns = self.__header).to_excel(
+                writer, sheet_name = name, index = False, freeze_panes = (1, 1))
+            sheets += 1
+        writer.save()
+        return sheets
     
     
     def airline(self, *folders: str, sep: bool = False) -> tuple[str, Workbook]:
@@ -520,10 +763,7 @@ class Rebuilder():
         for file in files:
             idct += 1
             print("\rcity data >>", int(idct / total * 100), end = "%")
-            filename = file.name.split('~')
-            dcity = filename[0]
-            acity = filename[1].strip(".xlsx")
-            totalfare = self.__airData.get_airfare(dcity, acity)
+            totalfare = self.__airData.get_airfare(file.name)
             
             dcity = self.__airData.from_code(dcity)
             d_tourism = True if dcity in self.__airData.tourism else False
@@ -952,8 +1192,7 @@ class Rebuilder():
         files = 0
         if isinstance(path, str):
             path = Path(path)
-        if not path.exists():
-            path.mkdir()
+        path.mkdir(parents = True, exist_ok = True)
         for arg in args:
             key, excel = arg
             if not excel:
@@ -975,10 +1214,11 @@ class Rebuilder():
         return files
     
 
-
 if __name__ == "__main__":
-    rebuild = Rebuilder(Path("2022-03-29"), 45)
-    print(rebuild.append_zip(), 'excels has been loaded.')
-    rebuild.output(rebuild.buyday())
-    print("Total warning(s):", rebuild.reset())
+    merger = Rebuilder(Path("2022-02-17"), 45)
+    total = merger.append_folder("2022-01-21", "2022-01-22", "2022-01-23") + merger.append_zip()
+    print(total, 'excels has been loaded.')
+    merger.merge_output(*merger.merge_route(), *merger.merge_airline())
+    print("Total warning(s):", merger.reset())
+    
     
