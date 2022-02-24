@@ -99,13 +99,12 @@ class Rebuilder():
         self.__warn = 0
     
     
-    def root(self, __root: Path = None, /) -> Path:
+    def root(self, __root: Path | str = None, /) -> Path:
         '''Change root path if root path is given.
         
         Return seted root path in `Path`.'''
-        if isinstance(__root, Path):
-            if __root.exists():
-                self.__root = __root
+        if Path(__root).exists() and __root:
+            self.__root = Path(__root)
         return self.__root
     
     
@@ -330,9 +329,9 @@ class Rebuilder():
         if not len(self.__merging):
             self.__merging = self.__merge()
         datas = self.__merging.sort_values('date_flight')
-        flight_dates = []
+        total_dates = []
         for item in datas['date_flight'].unique():
-            flight_dates.append(Timestamp.fromordinal(item).date())
+            total_dates.append(Timestamp.fromordinal(item).date())
         idct = 0
         sheets = datas.groupby(["date_coll"])
         percent = 50
@@ -344,7 +343,7 @@ class Rebuilder():
         menu.title = "索引-INDEX"
         menu.column_dimensions["A"].width = 11
         menu.freeze_panes = 'E2'
-        menu.append(["收集日期", "航班总数", "航线总数", "日期总数"] + flight_dates)
+        menu.append(["收集日期", "航班总数", "航线总数", "日期总数"] + total_dates)
         for idx in range(1, 5):
             menu.cell(1, idx).font = Font(bold = "b")
             menu.cell(1, idx).alignment = Alignment("center", "center")
@@ -357,6 +356,7 @@ class Rebuilder():
             sheet = Timestamp.fromordinal(coll_date).date()
             ws = wb.create_sheet(sheet.strftime("%m-%d"))
             row = {}
+            footer = ['平均', group["price_rate"].median(), group["price_rate"].mean()]
             routes = group.groupby(["route"])
             feat = [sheet, len(group), len(group["route"].unique()), len(group["date_flight"].unique())]
             flight_dates = group["date_flight"].unique()
@@ -368,6 +368,11 @@ class Rebuilder():
                 headers['date'].append(Timestamp.fromordinal(item).date())
                 headers['week'].append(Timestamp.fromordinal(item).isoweekday())
                 headers['adv'].append(item - coll_date)
+                try:
+                    footer.append(group.groupby(["date_flight"]).get_group(item)["price_rate"].mean())
+                except:
+                    footer.append(None)
+                
             
             for route, group in routes:
                 group.sort_values('date_flight', inplace = True)
@@ -401,20 +406,17 @@ class Rebuilder():
             ws.freeze_panes = 'D4'
             ws.column_dimensions["A"].width = 14
             
-            ws.append(("平均", ))
+            ws.append(footer)
             for idx in range(2, ws.max_column + 1):
-                coordinate = ws.cell(ws.max_row, idx).coordinate
-                top = ws.cell(4, idx).coordinate
-                bottom = ws.cell(ws.max_row - 1, idx).coordinate
-                ws[coordinate] = f"=AVERAGE({top}:{bottom})"
-                ws[coordinate].number_format = ".2%"
+                ws.cell(ws.max_row, idx).number_format = ".2%"
             
             ratios = []
-            for idx in range(5, menu.max_column + 1):
-                if ws.cell(1, idx - 1).value == menu.cell(1, idx).value:
-                    ratios.append(f"='{ws.title}'!{ws.cell(ws.max_row, idx - 1).coordinate}")
-                else:
-                    ratios.append(None)
+            for item in total_dates:
+                ratios.append(None)
+            for item in headers["date"][3:]:
+                idx = total_dates.index(item)
+                _idx = headers["date"].index(item)
+                ratios[idx] = f"='{ws.title}'!{ws.cell(ws.max_row, _idx + 1).coordinate}"
             menu.append(feat + ratios)
             cell = menu.cell(menu.max_row, 1)
             cell.hyperlink = f'#\'{ws.title}\'!C3'
@@ -1366,9 +1368,14 @@ class Rebuilder():
     
 
 if __name__ == "__main__":
-    folders = ("2022-01-21", "2022-01-22",)
-    rebuild = Rebuilder(Path("2022-02-17"), 45)
-    total = rebuild.append_folder(*folders)
+    folders = ("2022-01-21", "2022-01-22", "2022-01-23",)
+    rebuild = Rebuilder(Path("2022-01-29"), 50)
+    total = rebuild.append_zip()
+    rebuild.root("2022-02-10")
+    total += rebuild.append_zip()
+    rebuild.root("2022-02-17")
+    total += rebuild.append_folder(*folders)
+    total += rebuild.append_zip()
     print(total, 'excels has been loaded.')
     rebuild.merge_date()
     print("Total warning(s):", rebuild.reset())
