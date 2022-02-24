@@ -403,8 +403,8 @@ class Rebuilder():
         overview = datas.groupby(["airline"])
         overviews = {
             'airline': [], 'count': [], 'date_flight_count': [], 
-            'date_coll_count': [], 'density_day':[], 'route_count': [], 
-            'type_count': [], 'avg_ratio_price': [], 'mid_ratio_price': []}
+            'date_coll_count': [], 'route_count': [], 'type_count': [], 
+            'density_day':[], 'avg_ratio_price': [], 'mid_ratio_price': []}
         airline_density = {}
         airline_ratio = {}
         for hour in range(5, 25):
@@ -417,7 +417,7 @@ class Rebuilder():
             overviews['date_flight_count'].append(len(group['date_flight'].unique()))
             overviews['date_coll_count'].append(len(group['date_coll'].unique()))
             overviews['density_day'].append(average(group[['date_coll', 'date_flight']].value_counts().values))
-            overviews['route_count'].append(len(group[['dep', 'arr']].drop_duplicates()) / 2)
+            overviews['route_count'].append(round(len(group[['dep', 'arr']].drop_duplicates()) / 2))
             overviews['type_count'].append(len(group['type'].unique()))
             overviews['avg_ratio_price'].append(group['ratio_daily_hour'].mean())
             overviews['mid_ratio_price'].append(group['ratio_daily_hour'].median())
@@ -636,9 +636,14 @@ class Rebuilder():
         min_day = 2 * date.fromisoformat(self.__root.name).toordinal()
         max_day = 0
         if len(self.__title["flyday"]):
-            if self.__title["flyday"][0] < min_day:
-                min_day = self.__title["flyday"][0]
-            if self.__title["flyday"][len(self.__title["flyday"]) - 1] > max_day:
+            if isinstance(self.__title["flyday"][0], int):
+                if self.__title["flyday"][0] < min_day:
+                    min_day = self.__title["flyday"][0]
+                if self.__title["flyday"][len(self.__title["flyday"]) - 1] > max_day:
+                    max_day = self.__title["flyday"][len(self.__title["flyday"]) - 1]
+            elif self.__title["flyday"][3] < min_day:
+                min_day = self.__title["flyday"][3]
+            elif self.__title["flyday"][len(self.__title["flyday"]) - 1] > max_day:
                 max_day = self.__title["flyday"][len(self.__title["flyday"]) - 1]
         idct = 0
         total = len(files)
@@ -1200,7 +1205,7 @@ class Rebuilder():
             file = f"{key}_{self.__root}.xlsx"
             if (path / Path(file)).exists():
                 time = datetime.today().strftime("%H%M%S")
-                file.replace(".xlsx", f"_{time}.xlsx")
+                file = file.replace(".xlsx", f"_{time}.xlsx")
             excel.save(path / Path(file))
             excel.close
             files += 1
@@ -1210,15 +1215,18 @@ class Rebuilder():
                 if isinstance(self.__title.get(key), dict):
                     del self.__title[key]
                     self.__title[key] = {}
+                elif isinstance(self.__title.get(key), list):
+                    self.__title[key].clear()
             print(f"{key} data of {self.__root} has been rebuilt!")
         return files
     
 
 if __name__ == "__main__":
-    merger = Rebuilder(Path("2022-02-17"), 45)
-    total = merger.append_folder("2022-01-21", "2022-01-22", "2022-01-23") + merger.append_zip()
+    folders = ("2022-01-25", "2022-02-01", "2022-02-08", "2022-02-15", "2022-02-22")
+    rebuild = Rebuilder(Path("2022-02-17"), 45)
+    total = rebuild.append_zip(*folders)
     print(total, 'excels has been loaded.')
-    merger.merge_output(*merger.merge_route(), *merger.merge_airline())
-    print("Total warning(s):", merger.reset())
-    
+    for folder in folders:
+        rebuild.output(rebuild.flyday(folder), clear = True, path = 'adv_days')
+    print("Total warning(s):", rebuild.reset())
     
