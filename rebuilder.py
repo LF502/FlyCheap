@@ -248,7 +248,7 @@ class Rebuilder():
         return warn
     
     
-    def __merge(self) -> pandas.DataFrame:
+    def merging(self) -> pandas.DataFrame:
         total = len(self.__files)
         if total == 0:
             return None
@@ -278,9 +278,26 @@ class Rebuilder():
             datas.append(data.drop(data[data['day_adv'] > self.__day_limit].index))
         return pandas.concat(datas)
     
+    
+    def read_data(self, path: Path | str) -> tuple[str, int, int] | None:
+        '''Read pandas file
+        
+        Return file type of merged or merging and size'''
+        data = pandas.read_csv(Path(path))
+        row, col = data.shape
+        if col == 14:
+            self.__merging = data
+            return "merging", row, col
+        elif col == 17:
+            self.__merged = data
+            return "merged", row, col
+        else:
+            return None
+    
+    
     def merge_all(self) -> tuple[str, pandas.DataFrame]:
         if not len(self.__merging):
-            self.__merging = self.__merge()
+            self.__merging = self.merging()
         datas = self.__merging
         
         '''hour ratio'''
@@ -289,10 +306,8 @@ class Rebuilder():
         '''hour density'''
         '''airline hour competition'''
         hour_density = []
-        airline_hour_comp = []
         ratio_daily = []
         day_density = []
-        airline_day_comp = []
         cfdata = datas.groupby(["date_coll", "date_flight", "route"])
         cfhdata = datas.groupby(["date_coll", "date_flight", 'hour_dep', "route"])
         percent = 50
@@ -307,18 +322,12 @@ class Rebuilder():
             ratio_daily.append(value[9] / cfdata.get_group((value[10], value[0], \
                 value[13]))['price_rate'].mean())
             day_density.append(len(cfdata.get_group((value[10], value[0], value[13]))))
-            airline_day_comp.append(len(cfdata.get_group((value[10], value[0], \
-                value[13]))['airline'].unique()))
             hour_density.append(len(cfhdata.get_group((value[10], value[0], \
                 value[12], value[13]))))
-            airline_hour_comp.append(len(cfhdata.get_group((value[10], value[0], \
-                value[12], value[13]))['airline'].unique()))
         
         datas.loc[: , 'ratio_daily'] = ratio_daily
         datas.loc[: , 'density_day'] = day_density
-        datas.loc[: , 'comp_day'] = airline_day_comp
         datas.loc[: , 'density_hour'] = hour_density
-        datas.loc[: , 'comp_hour'] = airline_hour_comp
         
         self.__merged = datas
         print()
@@ -327,7 +336,7 @@ class Rebuilder():
     def merge_date(self, path: Path | str = '.charts', file: str = "Overview_by_Date") -> None:
         '''Date overview and output excel with conditional formats'''
         if not len(self.__merging):
-            self.__merging = self.__merge()
+            self.__merging = self.merging()
         datas = self.__merging.sort_values('date_flight')
         total_dates = []
         for item in datas['date_flight'].unique():
@@ -402,13 +411,13 @@ class Rebuilder():
                 ws.append(route)
             for cols in ws.iter_cols(2, ws.max_column, 4, ws.max_row):
                 for cell in cols:
-                    cell.number_format = ".2%"
+                    cell.number_format = "0.00%"
             ws.freeze_panes = 'D4'
             ws.column_dimensions["A"].width = 14
             
             ws.append(footer)
             for idx in range(2, ws.max_column + 1):
-                ws.cell(ws.max_row, idx).number_format = ".2%"
+                ws.cell(ws.max_row, idx).number_format = "0.00%"
             
             ratios = []
             for item in total_dates:
@@ -427,7 +436,7 @@ class Rebuilder():
         del sheets
         for cols in menu.iter_cols(5, menu.max_column, 2, menu.max_row):
             for cell in cols:
-                cell.number_format = ".2%"
+                cell.number_format = "0.00%"
         fill_even = PatternFill(bgColor = "FFCCCC", fill_type = "solid")
         fill_odd = PatternFill(bgColor = "FFEBCD", fill_type = "solid")
         idct, total = 0, len(wb.sheetnames)
@@ -1377,6 +1386,6 @@ if __name__ == "__main__":
     total += rebuild.append_folder(*folders)
     total += rebuild.append_zip()
     print(total, 'excels has been loaded.')
-    rebuild.merge_date()
+    rebuild.merging().to_csv('merging_2022-02-17.csv', index = False)
     print("Total warning(s):", rebuild.reset())
     
