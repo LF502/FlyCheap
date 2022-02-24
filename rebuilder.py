@@ -693,7 +693,7 @@ class Rebuilder():
         self.master["flyday"] = datadict
         print()
         return "flyday", self.format_excel(self.__flyday(datadict, self.__title["flyday"]), 
-                                           'C3', non_percent = ("每日航班密度",))
+                                           False, 'C3', non_percent = ("每日航班密度",))
     
     @staticmethod
     def __flyday(datadict: dict, title: list) -> Workbook:
@@ -1163,7 +1163,7 @@ class Rebuilder():
                 sheet.append(("平均", ))
                 for cols in range(2, sheet.max_column + 1):
                     coordinate = sheet.cell(sheet.max_row, cols).coordinate
-                    top = sheet.cell(2, cols).coordinate
+                    top = sheet.cell(row, cols).coordinate
                     bottom = sheet.cell(sheet.max_row - 1, cols).coordinate
                     sheet[coordinate] = f"=AVERAGE({top}:{bottom})"
         if isinstance(non_percent, tuple) or non_percent is False:
@@ -1222,7 +1222,7 @@ class Rebuilder():
     
 
 if __name__ == "__main__":
-    folders = ("2022-01-25", "2022-02-01", "2022-02-08", "2022-02-15", "2022-02-22")
+    folders = ("2022-01-26", )
     rebuild = Rebuilder(Path("2022-02-17"), 45)
     total = rebuild.append_zip(*folders)
     print(total, 'excels has been loaded.')
