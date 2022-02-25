@@ -288,7 +288,22 @@ class CivilAviation:
             ('SHE', 'TAO'): 1150, ('SHE', 'URC'): 2940, ('SHE', 'WUH'): 1830, 
             ('SHE', 'WUX'): 1390, ('SHE', 'XIY'): 1840, ('SHE', 'XMN'): 2150, 
             ('SJW', 'CAN'): 1790, ('SJW', 'SHA'): 1200, ('SYX', 'CSX'): 1890, 
-            ('TSN', 'CSX'): 1390, 
+            ('TSN', 'CSX'): 1390, ('SHE', 'SJW'): 920, ('SHE', 'HFE'): 1610, 
+            ('SHE', 'FOC'): 1980, ('HRB', 'SJW'): 1490, ('CGQ', 'WUX'): 1940, 
+            ('CGQ', 'HFE'): 1700, ('CGQ', 'KMG'): 3540, ('CGQ', 'FOC'): 2210, 
+            ('CGQ', 'CGO'): 1700, ('SJW', 'NKG'): 1040, ('SJW', 'HGH'): 1650, 
+            ('SJW', 'SYX'): 2620, ('SJW', 'HAK'): 2230, ('SJW', 'XMN'): 1760, 
+            ('SJW', 'CTU'): 1830, ('SJW', 'CKG'): 1310, ('SJW', 'KMG'): 2030, 
+            ('SJW', 'LHW'): 1180, ('SJW', 'URC'): 2610, ('SJW', 'FOC'): 1600, 
+            ('NKG', 'INC'): 1650, ('HGH', 'CSX'): 970, ('HGH', 'INC'): 1740, 
+            ('WUX', 'CSX'): 1370, ('HFE', 'SYX'): 2100, ('HFE', 'HAK'): 1990, 
+            ('HFE', 'XMN'): 940, ('HFE', 'URC'): 2840, ('HFE', 'TAO'): 800, 
+            ('HFE', 'DLC'): 1220, ('HAK', 'CSX'): 1410, ('CSX', 'LHW'): 1680, 
+            ('CSX', 'INC'): 1630, ('CTU', 'INC'): 1260, ('CKG', 'INC'): 1230, 
+            ('INC', 'URC'): 1730, ('INC', 'TAO'): 1550, ('INC', 'CGO'): 1040, 
+            ('KWE', 'BJS'): 1980, ('KWE', 'HRB'): 2730, ('KWE', 'SHA'): 1850, 
+            ('KWE', 'NKG'): 1560, ('KWE', 'HGH'): 1700, ('KWE', 'CAN'): 1510, 
+            ('KWE', 'XIY'): 1010, ('KWE', 'FOC'): 1620
             }
         
         self.routes_inactive = {
