@@ -208,6 +208,23 @@ class Rebuilder():
                     self.__unlink.append(item)
         return files
     
+    
+    def append_data(self, path: Path | str) -> int:
+        '''Load / append merged pandas file
+        
+        Return appended data rows count in `int`'''
+        print('\rloading data >> ', end = Path(path).name)
+        data = pandas.read_csv(Path(path))
+        if self.__day_limit:
+            data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
+        row, col = data.shape
+        if col == 14 and row > 0:
+            self.__merge = pandas.concat([data, self.__merge]) if len(self.__merge) else data
+            return row
+        else:
+            return 0
+    
+    
     def reset(self, unlink_file: bool = True, clear_rebuilt: bool = False) -> int:
         '''
         Clear all files in the data process queue
@@ -280,46 +297,6 @@ class Rebuilder():
             frame.append(data)
         return pandas.concat(frame)
     
-    
-    def load_data(self, path: Path | str) -> tuple[int, int] | None:
-        '''Load pandas file
-        
-        Return `tuple` of size (row, col)
-        
-        Return `None` for data in incorrect shape'''
-        print('loading data >> ', end = '...')
-        data = pandas.read_csv(Path(path))
-        if self.__day_limit:
-            data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
-        row, col = data.shape
-        if col == 14:
-            self.__merge = data
-            return row, col
-        else:
-            return None
-    
-    def amend_datafile(self, *files: Path | str, path: Path | str = None, new = False) -> int:
-        '''Append pandas data to an exsiting pandas file
-        
-        Return file loaded and appended count in `int`'''
-        total = len(files)
-        if not total:
-            return 0
-        idct = 0
-        for file in files:
-            file = Path(file)
-            print('\rappending data >>', int(idct / total * 100), end = '%')
-            data = pandas.read_csv(file)
-            file = file.name.split('_', 4)
-            file = Path(path) / Path(f"merged_{file[1]}.csv")
-            if new or (not new and file.exists()):
-                data.to_csv(file, mode = 'a', index = False)
-                idct += 1
-            else:
-                total -= 1
-                continue
-        print('\rappending data >> 100%')
-        return idct
     
     def merge_date(self, path: Path | str = '.charts', file: str = '') -> None:
         '''Date overview
@@ -1383,11 +1360,4 @@ class Rebuilder():
                     self.__title[key].clear()
             print(f"{key} data of {self.__root} has been rebuilt!")
         return files
-    
-
-if __name__ == "__main__":
-    rebuild = Rebuilder("2022-03-29")
-    rebuild.load_data("merged_2022-03-29.csv")
-    rebuild.merge_output(*rebuild.merge_airline(), *rebuild.merge_route())
-    rebuild.reset()
     
