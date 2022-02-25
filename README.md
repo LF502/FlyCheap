@@ -36,7 +36,7 @@ All folders' names are the data collecting date. A very beginning project :D
 
 ## 数据重构－Rebuilder
 
-### 六大数据重构功能
+### 七大数据重构功能
 
 #### 航空公司（airline）
 
@@ -68,10 +68,16 @@ All folders' names are the data collecting date. A very beginning project :D
 - [x] 各航线、各机型的投入数量
 - [x] 各航线、各机型的平均折扣
 
+#### 数据整合（merge）
+
+- [x] 数据总集，整合所有收集的航班原始信息
+- [x] 按日期（收集日期、航班日期），总览航线
+- [x] 按航线、航司和起飞时刻，总览时段、日期、提前天数
+
 ### 附加功能
 
 - 三种文件导入方式
-- 数据重复利用
+- 整合数据导入与重复利用
 
 ## 数据预处理－Preprocessor
 
