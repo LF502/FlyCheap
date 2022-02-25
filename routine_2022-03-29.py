@@ -5,6 +5,7 @@ from __init__ import Log
 from argparse import ArgumentParser
 import sys
 import pandas
+import platform
 
 if __name__ == "__main__":
 
@@ -28,8 +29,10 @@ if __name__ == "__main__":
     parser.add_argument("--parts", type = int, default = 0)
     parse_args = parser.parse_args()
     
-    date_coll = pandas.Timestamp.today().toordinal()
-    new = []
+    date_coll = pandas.Timestamp.today().date()
+    name = f'merging_2022-02-17_{date_coll.isoformat()}_{platform.system()}'
+    date_coll = date_coll.toordinal()
+    frame = []
     header = (
         'date_flight', 'day_week', 'airline', 'type', 'dep', 
         'arr', 'time_dep', 'time_arr', 'price', 'price_rate')
@@ -46,7 +49,7 @@ if __name__ == "__main__":
                     '-' + data['arr'].map(lambda x: airData.from_name(x))
             else:
                 data['route'] = data['dep'] + '-' + data['arr']
-            new.append(data)
+            frame.append(data)
         except:
             print(f'WARN: {crawler.file.name} merging skipped...')
-    pandas.concat(new).to_csv('merging_2022-03-29.csv', mode = 'a', index = False)
+    pandas.concat(frame).to_csv(name + '.csv', mode = 'a', index = False)
