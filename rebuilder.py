@@ -1,5 +1,5 @@
 from sqlite3 import Timestamp
-from numpy import average, sum
+from numpy import average as mean
 import pandas
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -252,7 +252,7 @@ class Rebuilder():
         total = len(self.__files)
         if total == 0:
             return None
-        datas = []
+        frame = []
         header = (
             'date_flight', 'day_week', 'airline', 'type', 'dep',                            #04
             'arr', 'time_dep', 'time_arr', 'price', 'price_rate')                           #09
@@ -275,15 +275,22 @@ class Rebuilder():
                     '-' + data['arr'].map(lambda x: self.__airData.from_name(x))
             else:
                 data['route'] = data['dep'] + '-' + data['arr']                             #13
-            datas.append(data.drop(data[data['day_adv'] > self.__day_limit].index))
-        return pandas.concat(datas)
+            if self.__day_limit:
+                data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
+            frame.append(data)
+        return pandas.concat(frame)
     
     
     def read_data(self, path: Path | str) -> tuple[str, int, int] | None:
         '''Read pandas file
         
-        Return file type of merged or merging and size'''
+        Return `tuple` with file type of merged or merging and size
+        
+        Return `None` for data in incorrect shape'''
+        print('reading data >> ', end = '...')
         data = pandas.read_csv(Path(path))
+        if self.__day_limit:
+            data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
         row, col = data.shape
         if col == 14:
             self.__merging = data
@@ -298,7 +305,7 @@ class Rebuilder():
     def merge_all(self) -> tuple[str, pandas.DataFrame]:
         if not len(self.__merging):
             self.__merging = self.merging()
-        datas = self.__merging
+        data = self.__merging
         
         '''hour ratio'''
         '''day density'''
@@ -308,43 +315,43 @@ class Rebuilder():
         hour_density = []
         ratio_daily = []
         day_density = []
-        cfdata = datas.groupby(["date_coll", "date_flight", "route"])
-        cfhdata = datas.groupby(["date_coll", "date_flight", 'hour_dep', "route"])
+        groups = data.groupby(["date_coll", "date_flight", "route"])
         percent = 50
-        total, idct = len(datas.values), 0
+        total, idct = len(data.values), 0
         
-        for value in datas.values:
+        for value in data.values:
             idct += 1
             if percent != int(idct / total * 50 + 50):
                 percent = int(idct / total * 50 + 50)
                 print(f"\rmerging overview >> {percent:03d}", end = '%')
             
-            ratio_daily.append(value[9] / cfdata.get_group((value[10], value[0], \
-                value[13]))['price_rate'].mean())
-            day_density.append(len(cfdata.get_group((value[10], value[0], value[13]))))
-            hour_density.append(len(cfhdata.get_group((value[10], value[0], \
-                value[12], value[13]))))
+            group = groups.get_group((value[10], value[0], value[13]))
+            ratio_daily.append(value[9] / group['price_rate'].mean())
+            day_density.append(len(group))
+            hour_density.append(len(group['hour_dep'].unique()))
         
-        datas.loc[: , 'ratio_daily'] = ratio_daily
-        datas.loc[: , 'density_day'] = day_density
-        datas.loc[: , 'density_hour'] = hour_density
+        data.loc[: , 'ratio_daily'] = ratio_daily
+        data.loc[: , 'density_day'] = day_density
+        data.loc[: , 'density_hour'] = hour_density
         
-        self.__merged = datas
+        self.__merged = data
         print()
-        return "全部", datas
+        return "全部", data
     
-    def merge_date(self, path: Path | str = '.charts', file: str = "Overview_by_Date") -> None:
-        '''Date overview and output excel with conditional formats'''
+    def merge_date(self, path: Path | str = '.charts', file: str = '') -> None:
+        '''Date overview
+        
+        Output excel with conditional formats'''
         if not len(self.__merging):
             self.__merging = self.merging()
-        datas = self.__merging.sort_values('date_flight')
+        data = self.__merging.sort_values('date_flight')
         total_dates = []
-        for item in datas['date_flight'].unique():
+        for item in data['date_flight'].unique():
             total_dates.append(Timestamp.fromordinal(item).date())
         idct = 0
-        sheets = datas.groupby(["date_coll"])
+        sheets = data.groupby(["date_coll"])
         percent = 50
-        total, idct = len(datas.groupby(["date_coll", "route"])), 0
+        total, idct = len(data.groupby(["date_coll", "route"])), 0
         
         '''Add index aka menu'''
         wb = Workbook()
@@ -457,18 +464,21 @@ class Rebuilder():
             avg_rule = CellIsRule('>', [f"$C${ws.max_row}"], False, Font(bold = "b"))
             ws.conditional_formatting.add(avg_string, avg_rule)
             for row in range(5, ws.max_row, 2):
-                rule_odd = CellIsRule('>', ["$C$" + str(row)], False, Font(color = "CC6600"), fill = fill_odd)
+                rule_odd = CellIsRule('>', ["$C$" + str(row)], False, 
+                                      Font(color = "CC6600"), fill = fill_odd)
                 rstring = f"{ws.cell(row, 4).coordinate}:{ws.cell(row, ws.max_column).coordinate}"
                 ws.conditional_formatting.add(rstring, rule_odd)
             for row in range(4, ws.max_row, 2):
-                rule_even = CellIsRule('>', ["$C$" + str(row)], False, Font(color = "CC0000"), fill = fill_even)
+                rule_even = CellIsRule('>', ["$C$" + str(row)], False, 
+                                       Font(color = "CC0000"), fill = fill_even)
                 rstring = f"{ws.cell(row, 4).coordinate}:{ws.cell(row, ws.max_column).coordinate}"
                 ws.conditional_formatting.add(rstring, rule_even)
+        if file == '' or file is None:
+            file = f"overview_{self.__root.name}_dates.xlsx"
         if not file.endswith(".xlsx"):
             file += ".xlsx"
-        if (path / Path(file)).exists():
-            time = datetime.today().strftime("%H%M%S")
-            file = file.replace(".xlsx", f"_{time}.xlsx")
+        if (Path(path) / Path(file)).exists():
+            file = file.replace(".xlsx", f"_{datetime.today().strftime('%H%M%S')}.xlsx")
         wb.save(Path(path) / Path(file))
         wb.close
         print()
@@ -478,8 +488,8 @@ class Rebuilder():
         '''Route overview'''
         if not len(self.__merged):
             _, self.__merged = self.merge_all()
-        datas = self.__merged
-        overview = datas.groupby(["route"])
+        data = self.__merged
+        overview = data.groupby(["route"])
         overviews = {
             'route': [], 'count': [], 'date_flight_count': [], 'date_coll_count': [], 
             'price_total': [], 'avg_price_rate': [], 'mid_price_rate': [], 
@@ -493,10 +503,10 @@ class Rebuilder():
         for hour in range(5, 25):
             route_density[hour] = []
             route_ratio[hour] = []
-        for day in sorted(datas['day_adv'].unique()):
+        for day in sorted(data['day_adv'].unique()):
             route_adv_mean[day] = []
             route_adv_std[day] = []
-        for day in sorted(datas['date_flight'].unique()):
+        for day in sorted(data['date_flight'].unique()):
             route_fdate_mean[day] = []
             route_fdate_std[day] = []
         for name, group in overview:
@@ -555,8 +565,8 @@ class Rebuilder():
         '''Airline overview'''
         if not len(self.__merged):
             _, self.__merged = self.merge_all()
-        datas = self.__merged
-        overview = datas.groupby(["airline"])
+        data = self.__merged
+        overview = data.groupby(["airline"])
         overviews = {
             'airline': [], 'count': [], 'date_flight_count': [], 
             'date_coll_count': [], 'route_count': [], 'type_count': [], 
@@ -571,7 +581,7 @@ class Rebuilder():
             overviews['count'].append(len(group))
             overviews['date_flight_count'].append(len(group['date_flight'].unique()))
             overviews['date_coll_count'].append(len(group['date_coll'].unique()))
-            overviews['density_day'].append(average(group[['date_coll', 'date_flight']].value_counts().values))
+            overviews['density_day'].append(mean(group[['date_coll', 'date_flight']].value_counts().values))
             overviews['route_count'].append(round(len(group[['dep', 'arr']].drop_duplicates()) / 2))
             overviews['type_count'].append(len(group['type'].unique()))
             overviews['avg_ratio_price'].append(group['ratio_daily'].mean())
@@ -598,7 +608,7 @@ class Rebuilder():
                      path: Path | str = '.charts') -> int:
         '''Output merged data and return the number of sheets generated'''
         sheets = 0
-        file = f"overview_{self.__root}.xlsx"
+        file = f"overview_{self.__root.name}.xlsx"
         if isinstance(path, str):
             path = Path(path)
         path.mkdir(parents = True, exist_ok = True)
@@ -1377,15 +1387,8 @@ class Rebuilder():
     
 
 if __name__ == "__main__":
-    folders = ("2022-01-21", "2022-01-22", "2022-01-23",)
-    rebuild = Rebuilder(Path("2022-01-29"), 50)
-    total = rebuild.append_zip()
-    rebuild.root("2022-02-10")
-    total += rebuild.append_zip()
-    rebuild.root("2022-02-17")
-    total += rebuild.append_folder(*folders)
-    total += rebuild.append_zip()
-    print(total, 'excels has been loaded.')
-    rebuild.merging().to_csv('merging_2022-02-17.csv', index = False)
+    rebuild = Rebuilder(Path("2022-03-29"))
+    rebuild.read_data('merging_2022-03-29.csv')
+    rebuild.merge_date()
     print("Total warning(s):", rebuild.reset())
     
