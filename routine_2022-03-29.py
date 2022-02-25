@@ -3,9 +3,9 @@ from civilaviation import CivilAviation
 from datetime import date
 from __init__ import Log
 from argparse import ArgumentParser
+from pathlib import Path
 import sys
 import pandas
-import platform
 
 if __name__ == "__main__":
 
@@ -30,7 +30,8 @@ if __name__ == "__main__":
     parse_args = parser.parse_args()
     
     date_coll = pandas.Timestamp.today().date()
-    name = f'merging_2022-02-17_{date_coll.isoformat()}_{platform.system()}'
+    name = f'{flightDate.isoformat()}_{date_coll.isoformat()}_{parse_args.part}_{parse_args.parts}'
+    file = Path('merging_' + name + '.csv')
     date_coll = date_coll.toordinal()
     frame = []
     header = (
@@ -49,7 +50,10 @@ if __name__ == "__main__":
                     '-' + data['arr'].map(lambda x: airData.from_name(x))
             else:
                 data['route'] = data['dep'] + '-' + data['arr']
-            frame.append(data)
+            if file.exists():
+                data.to_csv(file, mode = 'a', index = False, header = False)
+            else:
+                data.to_csv(file, index = False)
         except:
             print(f'WARN: {crawler.file.name} merging skipped...')
-    pandas.concat(frame).to_csv(name + '.csv', mode = 'a', index = False)
+    
