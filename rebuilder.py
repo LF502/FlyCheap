@@ -63,7 +63,7 @@ class Rebuilder():
             'dep': '出发机场', 'arr': '到达机场', 'route': '航线', 
             'time_dep': '出发时刻', 'time_arr': '到达时刻', 'hour_dep': '出发时段', 
             'density_day': '日航班数', 'density_hour': '时段密度', 
-            'comp_hour': '时段竞争', 'comp_day': '日竞争', 
+            'hour_comp': '时段竞争', 'day_comp': '日竞争', 
             
             
             'count': '总计', 'route_count': '航线计数', 'type_count': '机型计数', 
@@ -78,23 +78,6 @@ class Rebuilder():
         
         self.__day_limit = day_limit
         self.__root = Path(root)
-        self.__title = {
-            "airline": {"airlines": [], "dates": set(), 
-                        "hours": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 
-                                  16, 17, 18, 19, 20, 21, 22, 23, 24]}, 
-            "city": ("航线", "总价", "平均折扣", "航班总量",
-                     "出发地", "机场系数", "地理位置", "城市级别", "内陆旅游", 
-                     "到达地", "机场系数", "地理位置", "城市级别", "内陆旅游", ), 
-            "flyday": [], 
-            "buyday": [], 
-            "time": ("航线", "平均折扣", 5, 6, 7, 8, 9, 10, 11, 12, 
-                     13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24),  
-            "type": ("航线", "小型折扣", "日均数量", "中型折扣", 
-                     "日均数量", "大型折扣", "日均数量", "平均折扣", 
-                     "小型", "中型", "大型")}
-        
-        self.master = {"airline": {}, "city": {}, "flyday": {}, 
-                       "buyday": {}, "time": {}, "type": {},}
         
         self.__files: list[Path] = []
         self.__unlink: list[Path] = []
@@ -219,7 +202,7 @@ class Rebuilder():
         Return appended data rows count in `int`'''
         if path == '':
             path = f'merged_{self.__root.name}.csv'
-        print('\rloading data >> ', end = Path(path).name)
+        print('loading data >>', Path(path).name)
         data = pandas.read_csv(Path(path))
         if self.__day_limit:
             data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
@@ -245,25 +228,6 @@ class Rebuilder():
         self.__files.clear()
         self.__unlink.clear()
         if clear_rebuilt:
-            self.__title.clear()
-            self.__title = {
-                "airline": {"airlines": [], "dates": set(), 
-                            "hours": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 
-                                    16, 17, 18, 19, 20, 21, 22, 23, 24]}, 
-                "city": ("航线", "总价", "平均折扣", "航班总量", 
-                         "出发地", "机场系数", "地理位置", "城市级别", "内陆旅游", 
-                         "到达地", "机场系数", "地理位置", "城市级别", "内陆旅游", ), 
-                "flyday": [], 
-                "buyday": [], 
-                "time": ("航线", "平均折扣", 5, 6, 7, 8, 9, 10, 11, 12, 
-                        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24),  
-                "type": ("航线", "小型折扣", "日均数量", "中型折扣", 
-                        "日均数量", "大型折扣", "日均数量", "平均折扣", 
-                        "小型", "中型", "大型")}
-            
-            self.master.clear()
-            self.master = {"airline": {}, "city": {}, "flyday": {}, 
-                           "buyday": {}, "time": {}, "type": {},}
             self.__merge = []
         warn = self.__warn
         self.__warn = 0
@@ -301,6 +265,7 @@ class Rebuilder():
                 data['route'] = data['dep'] + '-' + data['arr']                             #13
             
             frame.append(data)
+        print()
         return pandas.concat(frame)
     
     
@@ -410,12 +375,12 @@ class Rebuilder():
                 cell.number_format = "0.00%"
         fill_even = PatternFill(bgColor = "FFCCCC", fill_type = "solid")
         fill_odd = PatternFill(bgColor = "FFEBCD", fill_type = "solid")
-        total = len(wb.sheetnames)
+        total, idct = len(wb.sheetnames), 0
         for ws in wb:
             idct += 1
             if percent != int(idct / total * 20 + 80):
                 percent = int(idct / total * 20 + 80)
-                print(f"\rmerging sheets >> {percent:03d}", end = '%')
+                print(f"\rmerging dates >> {percent:03d}", end = '%')
             if ws.title == menu.title:
                 continue
             cell = ws.cell(3, 3, "返回索引")
@@ -443,9 +408,9 @@ class Rebuilder():
             file += ".xlsx"
         if (Path(path) / Path(file)).exists():
             file = file.replace(".xlsx", f"_{datetime.today().strftime('%H%M%S')}.xlsx")
+        print("\r saving")
         wb.save(Path(path) / Path(file))
         wb.close
-        print()
     
     
     def overview_route(self, path: Path | str = '.charts', file: str = ''):
@@ -465,19 +430,24 @@ class Rebuilder():
         if 'ratio_daily' not in data.keys():
             data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
                 "date_flight", "route"])["price_rate"].transform("mean")
+        if 'hour_comp' not in data.keys():
+            data['hour_comp'] = data.groupby(["date_coll","date_flight", \
+                "hour_dep", "route"])["airline"].transform("nunique")
         
-        overview = data.groupby(["route"])
+        overview, total = data.groupby(["route"]), data['route'].nunique()
         overviews = {
             'route': [], 'count': [], 'date_flight_count': [], 'date_coll_count': [], 
             'type_count': [], 'price_total': [], 'avg_price_rate': [], 
             'mid_price_rate': [], 'airlines': [], 'density_hour': [], 'density_day': []}
         route_density = {}
         route_ratio = {}
+        route_comp = {}
         route_adv_mean = {}
         route_adv_std = {}
         route_fdate_mean = {}
         route_fdate_std = {}
         for hour in range(5, 25):
+            route_comp[hour] = []
             route_density[hour] = []
             route_ratio[hour] = []
         for day in sorted(data['day_adv'].unique()):
@@ -486,7 +456,12 @@ class Rebuilder():
         for day in sorted(data['date_flight'].unique()):
             route_fdate_mean[day] = []
             route_fdate_std[day] = []
+        idct, percent = 0, -1
         for name, group in overview:
+            idct += 1
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\rmerging routes >> {percent:03d}", end = '%')
             overviews['route'].append(name)
             overviews['count'].append(len(group))
             overviews['date_flight_count'].append(group['date_flight'].nunique())
@@ -499,6 +474,9 @@ class Rebuilder():
             overviews['density_hour'].append(round(group['density_hour'].mean(), 2))
             overviews['density_day'].append(round(group['density_day'].mean()))
             for hour in range(5, 25):
+                group: pandas.DataFrame
+                hour_airline = group.loc[group['hour_dep'] == hour, : ].get('hour_comp', 0).mean()
+                route_comp[hour].append(hour_airline if hour_airline else None)
                 hour_count = group['hour_dep'].value_counts().get(hour, 0)
                 route_density[hour].append(round(hour_count / len(group['hour_dep']), 2) \
                     if hour_count else None)
@@ -523,12 +501,14 @@ class Rebuilder():
         route_adv_mean = pandas.DataFrame(route_adv_mean)
         route_adv_std = pandas.DataFrame(route_adv_std)
         route_fdate_mean = pandas.DataFrame(route_fdate_mean)
+        route_comp = pandas.DataFrame(route_comp)
         route_fdate_mean.set_axis(fdate_header, inplace = True, axis = 'columns')
         route_fdate_std = pandas.DataFrame(route_fdate_std)
         route_fdate_std.set_axis(fdate_header, inplace = True, axis = 'columns')
         
         groups = (
             ('航线 - 时刻密度', pandas.concat([route_overview, route_density], axis = 1)), 
+            ('航线 - 时刻竞争', pandas.concat([route_overview, route_comp], axis = 1)), 
             ('航线 - 时刻系数', pandas.concat([route_overview, route_ratio], axis = 1)), 
             
             ('航线 - 提前平均折扣', pandas.concat([route_overview, route_adv_mean], axis = 1)), 
@@ -552,6 +532,7 @@ class Rebuilder():
         for name, group in groups:
             group.rename(columns = self.__header).to_excel(
                 writer, sheet_name = name, index = False, freeze_panes = (1, 11))
+        print("\r saving")
         writer.save()
         
     
@@ -565,11 +546,11 @@ class Rebuilder():
             data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
                 "date_flight", "route"])["price_rate"].transform("mean")
         
-        overview = data.groupby(["airline"])
+        overview, total = data.groupby(["airline"]), data["airline"].nunique()
         overviews = {
             'airline': [], 'count': [], 'date_flight_count': [], 
             'date_coll_count': [], 'route_count': [], 'type_count': [], 
-            'density_day':[], 'avg_ratio_price': [], 'mid_ratio_price': []}
+            'avg_ratio_price': [], 'mid_ratio_price': []}
         hour_density = {}
         hour_ratio = {}
         route_density = {}
@@ -588,12 +569,16 @@ class Rebuilder():
                 for airline in data['airline'].unique():
                     value.append(None)
         idx, item = 0, ['date_coll', 'date_flight']
+        idct, percent = 0, -1
         for name, group in overview:
+            idct += 1
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\rmerging routes >> {percent:03d}", end = '%')
             overviews['airline'].append(name)
             overviews['count'].append(len(group))
             overviews['date_flight_count'].append(group['date_flight'].nunique())
             overviews['date_coll_count'].append(group['date_coll'].nunique())
-            overviews['density_day'].append(len(group) / len(group[item].drop_duplicates()))
             overviews['route_count'].append(group['route'].nunique())
             overviews['type_count'].append(group['type'].nunique())
             overviews['avg_ratio_price'].append(group['ratio_daily'].mean())
@@ -646,13 +631,15 @@ class Rebuilder():
         writer = pandas.ExcelWriter(path / Path(file), engine = "openpyxl")
         for name, group in groups:
             group.rename(columns = self.__header).to_excel(
-                writer, sheet_name = name, index = False, freeze_panes = (1, 9))
+                writer, sheet_name = name, index = False, freeze_panes = (1, 8))
+        print("\r saving")
         writer.save()
     
     
 if __name__ == '__main__':
-    rebuild = Rebuilder("2022-02-17")
+    rebuild = Rebuilder('2022-02-17')
     rebuild.append_data()
-    rebuild.overview_airline(file = 'overview_2022-02-17_airlines')
-    rebuild.reset()
+    rebuild.overview_date()
+    rebuild.overview_route()
+    rebuild.overview_airline()
     
