@@ -424,9 +424,8 @@ class Rebuilder():
                 "hour_dep"])["hour_dep"].transform("count") / data.groupby(["date_coll", \
                     "date_flight", "route"])["hour_dep"].transform("count")
         if 'density_day' not in data.keys():
-            data['density_day'] = data.groupby(["date_coll", \
-                "route"])['date_flight'].transform("count") / data.groupby(["date_coll", \
-                    "route"])['date_coll'].transform("nunique")
+            data['density_day'] = data.groupby(["date_flight", \
+                "route", "date_coll"])['date_flight'].transform("count")
         if 'ratio_daily' not in data.keys():
             data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
                 "date_flight", "route"])["price_rate"].transform("mean")
