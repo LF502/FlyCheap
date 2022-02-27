@@ -285,7 +285,7 @@ class Rebuilder():
         wb = Workbook()
         menu = wb.active
         menu.title = "索引-INDEX"
-        menu.column_dimensions["A"].width = 11
+        menu.column_dimensions['A'].width = 11
         menu.freeze_panes = 'E2'
         menu.append(["收集日期", "航班总数", "航线总数", "日期总数"] + total_dates)
         for idx in range(1, 5):
@@ -302,16 +302,16 @@ class Rebuilder():
             row = {}
             footer = ['平均', group["price_rate"].median(), group["price_rate"].mean()]
             routes = group.groupby(["route"])
-            feat = [sheet, len(group), len(group["route"].unique()), len(group["date_flight"].unique())]
+            header = [sheet, len(group), len(group["route"].unique()), len(group["date_flight"].unique())]
             flight_dates = group["date_flight"].unique()
-            headers = {
+            title = {
                 'date': ["航线 \ 日期", "折扣中位", "折扣均值"], 
                 'week': ["(星期)", None, None], 
                 'adv': ["(提前天数)", None, None]}
             for item in flight_dates:
-                headers['date'].append(Timestamp.fromordinal(item).date())
-                headers['week'].append(Timestamp.fromordinal(item).isoweekday())
-                headers['adv'].append(item - coll_date)
+                title['date'].append(Timestamp.fromordinal(item).date())
+                title['week'].append(Timestamp.fromordinal(item).isoweekday())
+                title['adv'].append(item - coll_date)
                 try:
                     footer.append(group.groupby(["date_flight"]).get_group(item)["price_rate"].mean())
                 except:
@@ -334,9 +334,9 @@ class Rebuilder():
             del routes
             
             '''Format sheet'''
-            for header in headers.values():
+            for header in title.values():
                 ws.append(header)
-            ws.cell(1, 1).hyperlink = f'#\'{menu.title}\'!A1'
+            ws.cell(1, 1).hyperlink = f"#'{menu.title}'!A1"
             ws.cell(1, 1).font = Font(u = 'single', color = "0070C0")
             for idx in range(4, ws.max_column + 1):
                 ws.cell(1, idx).number_format = "mm\"-\"dd"
@@ -347,7 +347,7 @@ class Rebuilder():
                 for cell in cols:
                     cell.number_format = "0.00%"
             ws.freeze_panes = 'D4'
-            ws.column_dimensions["A"].width = 14
+            ws.column_dimensions['A'].width = 14
             
             ws.append(footer)
             for idx in range(2, ws.max_column + 1):
@@ -356,13 +356,13 @@ class Rebuilder():
             ratios = []
             for item in total_dates:
                 ratios.append(None)
-            for item in headers["date"][3:]:
+            for item in title["date"][3:]:
                 idx = total_dates.index(item)
-                _idx = headers["date"].index(item)
+                _idx = title["date"].index(item)
                 ratios[idx] = f"='{ws.title}'!{ws.cell(ws.max_row, _idx + 1).coordinate}"
-            menu.append(feat + ratios)
+            menu.append(header + ratios)
             cell = menu.cell(menu.max_row, 1)
-            cell.hyperlink = f'#\'{ws.title}\'!C3'
+            cell.hyperlink = f"#'{ws.title}'!C3"
             cell.font = Font(u = 'single', color = "0070C0")
         
         
@@ -382,7 +382,7 @@ class Rebuilder():
             if ws.title == menu.title:
                 continue
             cell = ws.cell(3, 3, "返回索引")
-            cell.hyperlink = f'#\'{menu.title}\'!A1'
+            cell.hyperlink = f"#'{menu.title}'!A1"
             cell.font = Font(u = 'single', color = "0070C0")
             med_string = f"B4:B{ws.max_row - 1}"
             med_rule = CellIsRule('>', [f"$B${ws.max_row}"], False, Font(bold = "b"))
@@ -431,10 +431,10 @@ class Rebuilder():
         title = [
             '航线', '总计', '航班日数', '收集日数', '机型数量', '全价', 
             '折扣平均', '折扣中位', '运营航司', '时段竞争', '日航班数']
-        title_adv = {"overview": title + list(data['day_adv'].unique())}
+        title_adv = {"overview": title + sorted(data['day_adv'].unique())}
         title_hour = title + list(range(5, 25))
-        title_date = title + list(Timestamp.fromordinal(day).date() \
-            for day in data['date_flight'].unique())
+        title_date = title + list(Timestamp.fromordinal(ordinal).date() \
+            for ordinal in data['date_flight'].unique())
         
         route_density = {}
         route_ratio = {}
@@ -469,7 +469,6 @@ class Rebuilder():
             title_adv[name] = list(group['day_adv'].unique())
             
             for hour in range(5, 25):
-                group: pandas.DataFrame
                 hour_airline = group.loc[group['hour_dep'] == hour, : ].get('hour_comp', 0).mean()
                 route_comp[name].append(hour_airline if hour_airline else None)
                 hour_count = group['hour_dep'].value_counts().get(hour, 0)
@@ -482,17 +481,15 @@ class Rebuilder():
                 route_adv_mean[name].append(mean if mean else None)
                 std = group.loc[group['day_adv'] == day, : ].get('price_rate', 0).std()
                 route_adv_std[name].append(std if std else None)
-            for day in data['date_flight'].unique():
-                mean = group.loc[group['date_flight'] == day, : ].get('price_rate', 0).mean()
+            for ordinal in data['date_flight'].unique():
+                mean = group.loc[group['date_flight'] == ordinal, : ].get('price_rate', 0).mean()
                 route_date_mean[name].append(mean if mean else None)
-                std = group.loc[group['date_flight'] == day, : ].get('price_rate', 0).std()
+                std = group.loc[group['date_flight'] == ordinal, : ].get('price_rate', 0).std()
                 route_date_std[name].append(std if std else None)
             for day in group['date_flight'].unique():
                 route_date[name][day] = list(None for _ in title_adv[name])
-            for targets, _group in group.groupby(['date_flight', 'day_adv']):
-                day, adv = targets
-                route_date[name][day][title_adv[name].index(adv)] = _group['price_rate'].mean()
-        
+            for (ordinal, day), _group in group.groupby(['date_flight', 'day_adv']):
+                route_date[name][ordinal][title_adv[name].index(day)] = _group['price_rate'].mean()
         
         wb = Workbook()
         for sheet in ('航线 - 时刻密度', '航线 - 时刻竞争', '航线 - 时刻系数'):
@@ -515,8 +512,8 @@ class Rebuilder():
             for idx in range(1, len(title_adv["overview"]) + 1):
                 ws.cell(1, idx).font = Font(bold = "b")
                 ws.cell(1, idx).alignment = Alignment("center", "center")
-        wb.remove(wb.active)
         
+        wb.remove(wb.active)
         for name in headers.keys():
             wb['航线 - 时刻密度'].append(headers[name] + route_density[name])
             wb['航线 - 时刻竞争'].append(headers[name] + route_comp[name])
@@ -527,11 +524,12 @@ class Rebuilder():
             wb['航线 - 单日标准差'].append(headers[name] + route_date_std[name])
         for ws in wb:
             ws.freeze_panes = 'L2'
-            ws.column_dimensions["A"].width = 14
+            ws.column_dimensions['A'].width = 14
             for idx in range(2, ws.max_row + 1):
-                cell = ws.cell(idx, 1)
-                cell.hyperlink = f'#\'{cell.value}\'!B1'
-                cell.font = Font(u = 'single', color = "0070C0")
+                ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!B1"
+                ws.cell(idx, 1).font = Font(u = 'single', color = "0070C0")
+                ws.cell(idx, 7).number_format = "0.00%"
+                ws.cell(idx, 8).number_format = "0.00%"
         
         for name in headers.keys():
             ws = wb.create_sheet(name)
@@ -542,9 +540,9 @@ class Rebuilder():
             ws.cell(1, 1).hyperlink = "#'航线 - 时刻密度'!A1"
             ws.cell(1, 1).font = Font(u = 'single', color = "0070C0")
             ws.freeze_panes = 'C2'
-            ws.column_dimensions["A"].width = 13
-            ws.column_dimensions["A"].width = 6
-            for idx in range(3, ws.max_column + 1):
+            ws.column_dimensions['A'].width = 12
+            ws.column_dimensions["B"].width = 6
+            for idx in range(2, ws.max_row + 1):
                 ws.cell(idx, 1).number_format = "mm\"-\"dd"
             for cols in ws.iter_cols(3, ws.max_column, 2, ws.max_row):
                 for cell in cols:
@@ -552,8 +550,12 @@ class Rebuilder():
             cell = ws.cell(ws.max_row + 1, 1, '返回索引')
             cell.hyperlink = "#'航线 - 时刻密度'!A1"
             cell.font = Font(u = 'single', color = "0070C0")
+            cell = ws.cell(ws.max_row, 2, '返程')
+            routes = name.split('-', 1)
+            cell.hyperlink = f"#'{routes[1]}-{routes[0]}'!A2"
+            cell.font = Font(u = 'single', color = "0070C0")
         
-        '''Output merged data and return the number of sheets generated'''
+        '''Output merged data'''
         if file == '' or file is None:
             file = f"overview_{self.__root.name}_routes.xlsx"
         if not file.endswith(".xlsx"):
@@ -579,78 +581,226 @@ class Rebuilder():
             data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
                 "date_flight", "route"])["price_rate"].transform("mean")
         
-        overview, total = data.groupby(["airline"]), data["airline"].nunique()
-        overviews = {
-            'airline': [], 'count': [], 'date_flight_count': [], 
-            'date_coll_count': [], 'route_count': [], 'type_count': [], 
-            'avg_ratio_price': [], 'mid_ratio_price': []}
+        overview, total = data.groupby(["airline"]), len(data)
+        title = [
+            '航空公司', '总计', '航班日数', '收集日数', 
+            '航线数量', '机型数量', '系数平均', '系数中位']
+        title_hour = title + list(range(5, 25))
+        title_route = title + sorted(data['route'].unique())
+        title_dep = title + sorted(data['dep'].unique())
+        headers = {}
+        routes = {}
+        airlines = {}
         hour_density = {}
         hour_ratio = {}
+        route_count = {}
         route_density = {}
         route_ratio = {}
         dep_ap = {}
-        for hour in range(5, 25):
-            hour_density[hour] = []
-            hour_ratio[hour] = []
-        for route in data['route'].unique():
-            route_density[route] = []
-            route_ratio[route] = []
-        for dep in data['dep'].unique():
-            dep_ap[dep] = []
-        for item in (dep_ap, route_ratio, route_density):
-            for value in item.values():
-                for airline in data['airline'].unique():
-                    value.append(None)
-        idx, item = 0, ['date_coll', 'date_flight']
+        
         idct, percent = 0, -1
         for name, group in overview:
-            idct += 1
+            
+            headers[name] = [
+                name, len(group), group['date_flight'].nunique(), group['date_coll'].nunique(), 
+                group['route'].nunique(), group['type'].nunique(), group['ratio_daily'].mean(), 
+                group['ratio_daily'].median()]
+            route_count[name] = sorted(group['route'].unique())
+            hour_density[name] = []
+            hour_ratio[name] = []
+            airlines[name] = {}
+            route_density[name] = list(None for _ in data['route'].unique())
+            route_ratio[name] = list(None for _ in data['route'].unique())
+            dep_ap[name] = list(None for _ in data['dep'].unique())
+            
+            idct += len(group) / 4
             if percent != int(idct / total * 100):
                 percent = int(idct / total * 100)
-                print(f"\rmerging routes >> {percent:03d}", end = '%')
-            overviews['airline'].append(name)
-            overviews['count'].append(len(group))
-            overviews['date_flight_count'].append(group['date_flight'].nunique())
-            overviews['date_coll_count'].append(group['date_coll'].nunique())
-            overviews['route_count'].append(group['route'].nunique())
-            overviews['type_count'].append(group['type'].nunique())
-            overviews['avg_ratio_price'].append(group['ratio_daily'].mean())
-            overviews['mid_ratio_price'].append(group['ratio_daily'].median())
+                print(f"\rmerging airlines >> {percent:03d}", end = '%')
             for hour in range(5, 25):
                 count = group['hour_dep'].value_counts().get(hour, 0)
-                hour_density[hour].append(round(count / len(group['hour_dep']), 2) \
+                hour_density[name].append(round(count / len(group['hour_dep']), 2) \
                     if count else None)
                 ratio = group.loc[group['hour_dep'] == hour, : ].get('ratio_daily').mean()
-                hour_ratio[hour].append(round(ratio, 2) if ratio else None)
-            for route in group['route'].unique():
-                count = group['route'].value_counts().get(route)
-                days = len(group.loc[group['route'] == route, : ][item].drop_duplicates())
-                route_density[route][idx] = count / days
-                ratio = group.loc[group['route'] == route, : ].get('ratio_daily').mean()
-                route_ratio[route][idx] = round(ratio, 2)
-            for dep in group['dep'].unique():
-                count = group['dep'].value_counts().get(dep) 
-                dep_ap[dep][idx] = (
-                    count / len(group.loc[group['dep'] == dep, : ][item].drop_duplicates()))
-            idx += 1
-        
-        airline_overview = pandas.DataFrame(overviews)
-        hour_density = pandas.DataFrame(hour_density)
-        hour_ratio = pandas.DataFrame(hour_ratio)
-        route_density = pandas.DataFrame(route_density)
-        route_ratio = pandas.DataFrame(route_ratio)
-        dep_ap = pandas.DataFrame(dep_ap)
-        del overview, overviews
-        
-        groups = (
-            ('航司 - 时刻密度', pandas.concat([airline_overview, hour_density], axis = 1)), 
-            ('航司 - 时刻系数', pandas.concat([airline_overview, hour_ratio], axis = 1)), 
+                hour_ratio[name].append(ratio if ratio else None)
             
-            ('航司 - 航线密度', pandas.concat([airline_overview, route_density], axis = 1)),
-            ('航司 - 航线系数', pandas.concat([airline_overview, route_ratio], axis = 1)),
-            ('航司 - 机场计数', pandas.concat([airline_overview, dep_ap], axis = 1)))
+            idct += len(group) / 4
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\rmerging airlines >> {percent:03d}", end = '%')
+            for route in group['route'].unique():
+                airlines[name][route] = []
+                idx = title_route.index(route) - len(title)
+                count = group['route'].value_counts().get(route)
+                days = len(group.loc[group['route'] == route, \
+                    : ][['date_coll', 'date_flight']].drop_duplicates())
+                route_density[name][idx] = count / days
+                ratio = group.loc[group['route'] == route, : ].get('ratio_daily').mean()
+                route_ratio[name][idx] = ratio
+            
+            idct += len(group) / 4
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\rmerging airlines >> {percent:03d}", end = '%')
+            for dep in group['dep'].unique():
+                idx = title_dep.index(dep) - len(title)
+                count = group['dep'].value_counts().get(dep) 
+                dep_ap[name][idx] = count / len(group.loc[group['dep'] == dep, \
+                        : ][['date_coll', 'date_flight']].drop_duplicates())
+            
+            idct += len(group) / 4
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\rmerging airlines >> {percent:03d}", end = '%')
+            for route, _group in group.groupby(['route']):
+                airlines[name][route] = []
+                for hour in range(5, 25):
+                    ratio = _group.loc[_group['hour_dep'] == hour, : ].get('ratio_daily').mean()
+                    airlines[name][route].append(ratio if ratio else None)
+            for route in group['route'].unique():
+                if routes.get(route):
+                    routes[route][name] = airlines[name][route].copy()
+                else:
+                    routes[route] = {name: airlines[name][route].copy()}
         
-        '''Output merged data and return the number of sheets generated'''
+        wb = Workbook()
+        ws = wb.create_sheet('索引')
+        ws.append(('航空公司', '出发机场', '到达机场'))
+        ws.auto_filter.ref = 'A1:B1'
+        ws.freeze_panes = 'A2'
+        ws.column_dimensions['A'].width, idx = 13, 2
+        for airline in sorted(data['airline'].unique()):
+            cell = ws.cell(idx, 1, airline)
+            cell.hyperlink = f"#'{cell.value}'!A1"
+            cell.font = Font(u = 'single', color = "0070C0")
+            cell.alignment = Alignment("center", "center")
+            idx += 1
+        cities, cities_sort = {}, []
+        for route in data['route'].unique():
+            dep_c, arr_c = route.split('-', 1)
+            if cities.get(dep_c):
+                cities[dep_c].append(arr_c)
+            else:
+                cities[dep_c] = [arr_c]
+        for city in cities.keys():
+            cities[city].sort(key = lambda x: len(cities[x]), reverse = True)
+            cities_sort.append(city)
+        cities_sort.sort(key = lambda x: len(cities[x]), reverse = True)
+        for dep_c in cities_sort:
+            row, col = cities_sort.index(dep_c) + 2, 3
+            cell = ws.cell(row, 2, dep_c)
+            for arr_c in cities[dep_c]:
+                cell = ws.cell(row, col, arr_c)
+                cell.hyperlink = f"#'{dep_c}-{arr_c}'!A1"
+                cell.font = Font(u = 'single', color = "0070C0")
+                cell.alignment = Alignment("center", "center")
+                col += 1
+        for idx in range(1, 4):
+            ws.cell(1, idx).font = Font(bold = "b")
+            ws.cell(1, idx).alignment = Alignment("center", "center")
+        
+        for sheet in ('航司 - 航线密度', '航司 - 航线系数'):
+            ws = wb.create_sheet(sheet)
+            ws.append(title_route)
+            for idx in range(1, len(title) + 1):
+                ws.cell(1, idx).font = Font(bold = "b")
+                ws.cell(1, idx).alignment = Alignment("center", "center")
+            for idx in range(len(title) + 1, len(title_route) + 1):
+                cell = ws.cell(1, idx)
+                cell.hyperlink = f"#'{cell.value}'!A1"
+                cell.font = Font(u = 'single', color = "0070C0")
+                cell.alignment = Alignment("center", "center")
+                ws.column_dimensions[cell.coordinate[:1]].width = 10
+        
+        for sheet in ('航司 - 时刻密度', '航司 - 时刻系数'):
+            ws = wb.create_sheet(sheet)
+            ws.append(title_hour)
+            for idx in range(1, len(title_hour) + 1):
+                ws.cell(1, idx).font = Font(bold = "b")
+                ws.cell(1, idx).alignment = Alignment("center", "center")
+        
+        ws = wb.create_sheet('航司 - 机场计数')
+        ws.append(title_dep)
+        for idx in range(1, len(title_dep) + 1):
+            ws.cell(1, idx).font = Font(bold = "b")
+            ws.cell(1, idx).alignment = Alignment("center", "center")
+        
+        wb.remove(wb.active)
+        for name in headers.keys():
+            wb['航司 - 航线密度'].append(headers[name] + route_density[name])
+            wb['航司 - 航线系数'].append(headers[name] + route_ratio[name])
+            wb['航司 - 时刻密度'].append(headers[name] + hour_density[name])
+            wb['航司 - 时刻系数'].append(headers[name] + hour_ratio[name])
+            wb['航司 - 机场计数'].append(headers[name] + dep_ap[name])
+        for sheet in ('航司 - 时刻系数', '航司 - 航线系数'):
+            for cols in wb[sheet].iter_cols(len(title) + 1, ws.max_column, 2, ws.max_row):
+                for cell in cols:
+                    cell.number_format = "0.00%"
+        
+        for ws in wb:
+            if ws.title == '索引':
+                continue
+            ws.freeze_panes = 'I2'
+            ws.column_dimensions['A'].width = 13
+            for idx in range(2, ws.max_row + 1):
+                ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!A1"
+                ws.cell(idx, 1).font = Font(u = 'single', color = "0070C0")
+                ws.cell(idx, len(title)).number_format = "0.00%"
+                ws.cell(idx, len(title) - 1).number_format = "0.00%"
+        
+        '''Airline details'''
+        for airline in airlines.keys():
+            ws = wb.create_sheet(airline)
+            ws.append(['航线'] + list(range(5, 25)))
+            ws.freeze_panes = 'B2'
+            ws.column_dimensions['A'].width = 14
+            for route in airlines[airline].keys():
+                ws.append([route] + airlines[airline][route])
+            for idx in range(2, ws.max_row + 1):
+                ws.cell(idx, 1).font = Font(u = 'single', color = "0070C0")
+                ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!A1"
+            for idx in range(2, 22):
+                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = Font(bold = "b")
+            for cols in ws.iter_cols(2, ws.max_column, 2, ws.max_row):
+                for cell in cols:
+                    cell.number_format = "0.00%"
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
+            cell.hyperlink = "#'索引'!A1"
+            cell.font = Font(u = 'single', color = "0070C0")
+            ws.cell(1, 1).hyperlink = "#'索引'!A1"
+            ws.cell(1, 1).font = Font(u = 'single', color = "0070C0", bold = "b")
+            ws.cell(1, 1).alignment = Alignment("center", "center")
+        
+        '''Route details'''
+        for route in routes.keys():
+            ws = wb.create_sheet(route)
+            ws.append(['航司'] + list(range(5, 25)))
+            ws.freeze_panes = 'B2'
+            ws.column_dimensions['A'].width = 13
+            for airline in routes[route].keys():
+                ws.append([airline] + routes[route][airline])
+            for idx in range(2, ws.max_row + 1):
+                ws.cell(idx, 1).font = Font(u = 'single', color = "0070C0")
+                ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!A1"
+            for idx in range(2, 22):
+                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = Font(bold = "b")
+            for cols in ws.iter_cols(2, ws.max_column, 2, ws.max_row):
+                for cell in cols:
+                    cell.number_format = "0.00%"
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
+            cell.hyperlink = "#'索引'!A1"
+            cell.font = Font(u = 'single', color = "0070C0")
+            cell = ws.cell(ws.max_row + 1, 1, '返程')
+            route = route.split('-', 1)
+            cell.hyperlink = f"#'{route[1]}-{route[0]}'!A2"
+            cell.font = Font(u = 'single', color = "0070C0")
+            ws.cell(1, 1).hyperlink = "#'索引'!A1"
+            ws.cell(1, 1).font = Font(u = 'single', color = "0070C0", bold = "b")
+            ws.cell(1, 1).alignment = Alignment("center", "center")
+        
+        '''Output merged data'''
         if file == '' or file is None:
             file = f"overview_{self.__root.name}_airlines.xlsx"
         if not file.endswith(".xlsx"):
@@ -661,21 +811,18 @@ class Rebuilder():
         if (path / Path(file)).exists():
             time = datetime.today().strftime("%H%M%S")
             file = file.replace(".xlsx", f"_{time}.xlsx")
-        writer = pandas.ExcelWriter(path / Path(file), engine = "openpyxl")
-        for name, group in groups:
-            group.rename(columns = self.__header).to_excel(
-                writer, sheet_name = name, index = False, freeze_panes = (1, 8))
         print("\r saving")
-        writer.save()
+        wb.save(path / Path(file))
+        wb.close()
     
     
 if __name__ == '__main__':
     rebuild = Rebuilder('2022-03-29')
     rebuild.append_data()
-    rebuild.overview_route()
+    rebuild.overview_airline()
     rebuild.reset(True, True)
     rebuild.root('2022-02-17')
     rebuild.append_data()
-    rebuild.overview_route()
+    rebuild.overview_airline()
     rebuild.reset(True, True)
     
