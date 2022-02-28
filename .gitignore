@@ -5,8 +5,12 @@ __pycache__
 .orig
 .preproc
 .notes
+.charts
+.sourcecode
 *.log
 *.txt
 *.ipynb
 *.bak
 *.csv
+*.bat
+*.sh
