@@ -56,6 +56,11 @@ class Rebuilder():
         self.__airData = CivilAviation()
         self.__merge = []
         
+        self.__header_min = {
+            'date_flight', 'day_week', 'airline', 'type', 'dep',
+            'arr', 'time_dep', 'time_arr', 'price', 'price_rate'
+        }
+        self.__header_req = {'day_adv', 'hour_dep', 'route'}
         self.__title = {
             'date_flight': '航班日期', 'day_week': '星期', 
             'date_coll': '收集日期', 'day_adv': '提前天数', 
@@ -216,21 +221,27 @@ class Rebuilder():
         return files
     
     
-    def append_data(self, path: Path | str = '') -> int:
+    def append_data(self, path: Path | str | None = None) -> pandas.DataFrame:
         '''Load / append merged pandas file
         
-        Return appended data rows count in `int`'''
-        if path == '':
+        Return appended data `pandas.DataFrame`'''
+        if path == '' or path == None or path == Path():
             path = f'merged_{self.__root.name}.csv'
         print('loading data >>', Path(path).name)
         data = pandas.read_csv(Path(path))
-        if self.__day_limit:
-            data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
-        row, col = data.shape
-        if col == 14 and row > 0:
+        if not self.__header_min < set(data.keys()):
+            print("ERROR: Required header missing!")
+            return 0
+        elif not self.__header_req < set(data.keys()):
+            print("ERROR: Merge data by merge method first!")
+            return 0
+        if len(data) > 0:
+            if self.__day_limit:
+                data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
             self.__merge = pandas.concat([data, self.__merge]) if len(self.__merge) else data
-            return row
+            return data
         else:
+            print("ERROR: No valid data loaded!")
             return 0
     
     
@@ -257,7 +268,7 @@ class Rebuilder():
     def __diffrule(index, type: str, op: str = None, formula = ()) -> Rule:
         exp = {
             ">": "greaterThan", ">=": "greaterThanOrEqual", "<": "lessThan", 
-            "<=": "lessThanOrEqual","=": "equal", "==": "equal", "!=": "notEqual"}
+            "<=": "lessThanOrEqual", "=": "equal", "==": "equal", "!=": "notEqual"}
         if not index:
             return Rule(
                 type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
@@ -308,7 +319,7 @@ class Rebuilder():
         return pandas.concat(frame)
     
     
-    def dates(self, detailed: bool = True, path: Path | str = '.charts', file: str = '') -> None:
+    def dates(self, detailed: bool = True, path: Path | str = Path(), file: str = '') -> None:
         '''Date overview by date of collect and date of flight
         
         Output separated excel with conditional formats'''
@@ -568,7 +579,7 @@ class Rebuilder():
         wb_flight.close
     
     
-    def routes(self, detailed: bool = True, path: Path | str = '.charts', file: str = ''):
+    def routes(self, detailed: bool = True, path: Path | str = Path(), file: str = ''):
         '''Route overview'''
         if not len(self.__merge):
             self.__merge = self.merge()
@@ -855,7 +866,7 @@ class Rebuilder():
         wb.close()
     
     
-    def airlines(self, detailed: bool = True, path: Path | str = '.charts', file: str = ''):
+    def airlines(self, detailed: bool = True, path: Path | str = Path(), file: str = ''):
         '''Airline overview'''
         if not len(self.__merge):
             self.__merge = self.merge()
@@ -1102,11 +1113,10 @@ class Rebuilder():
     
     
 if __name__ == '__main__':
-    rebuild = Rebuilder('2022-03-29')
+    rebuild = Rebuilder('2022-02-17')
     rebuild.append_data()
-    rebuild.routes()
+    rebuild.routes(path = '', file = "航线概览")
+    rebuild.dates(path = '', file = "日期概览")
+    rebuild.airlines(file = "航司概览")
     rebuild.reset(True, True)
-    rebuild.root('2022-02-17')
-    rebuild.append_data()
-    rebuild.routes()
-    rebuild.reset(True, True)
+    
