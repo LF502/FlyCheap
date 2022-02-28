@@ -681,6 +681,7 @@ class Rebuilder():
                 footers[name]['day'].append(_group['price_rate'].mean())
             for day, _group in group.groupby(['date_coll']):
                 footers[name]['coll'].append(_group['price_rate'].mean())
+            footers[name]['coll'].reverse()
         
         '''Add index aka menu and overviews'''
         wb = Workbook()
@@ -1110,13 +1111,4 @@ class Rebuilder():
         print("\r saving")
         wb.save(path / Path(file))
         wb.close()
-    
-    
-if __name__ == '__main__':
-    rebuild = Rebuilder('2022-02-17')
-    rebuild.append_data()
-    rebuild.routes(path = '', file = "航线概览")
-    rebuild.dates(path = '', file = "日期概览")
-    rebuild.airlines(file = "航司概览")
-    rebuild.reset(True, True)
     
