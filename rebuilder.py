@@ -1170,3 +1170,48 @@ class Rebuilder():
         wb.save(path / Path(file))
         wb.close()
     
+    
+    def get_route(self) -> pandas.DataFrame:
+        data, output = self.__merge.copy(False), pandas.DataFrame()
+        time = {
+            8: [0, 1], 9: [0, 1], 10: [1, 1], 11: [1, 1], 12: [1, 1], 13: [1, 1], 
+            14: [1, 1], 15: [1, 1], 16: [1, 1], 17: [1, 0], 18: [1, 0], 19: [1, 0], }
+        data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
+            "date_flight", "dep", "arr"])["price_rate"].transform("mean")
+        data['price_mean'] = data.groupby(["date_coll", "date_flight", \
+            "dep", "arr"])["price_rate"].transform("mean")
+        data['time'] = data['hour_dep'].map(lambda x: time.get(x, [0, 0]))
+        routes = data.drop_duplicates(['dep', 'arr', "date_coll", "date_flight"])
+        routes = routes[['dep', 'arr', 'day_adv', 'day_week', 'date_flight', \
+            'date_coll', 'price_mean']]
+        
+        multi_ap = lambda x: True if '大兴' in x or '天府' in x or '浦东' in x else False
+        tourism = lambda x: True if self.__airData.cityClass.get(x, 0.1) >= 0.8 or x in \
+            self.__airData.tourism or self.__airData.cityLocation.get(x) <= 0.1 else False
+        for key in ('dep', 'arr'):
+            col, _data = pandas.DataFrame(), routes[key]
+            col['a'] = _data.map(self.__airData.airports)
+            col['c'] = _data.map(self.__airData.cityClass)
+            col['l'] = _data.map(self.__airData.cityLocation)
+            col['t'], col['m'] = _data.map(tourism), _data.map(multi_ap)
+            output[key] = col.to_numpy().tolist()
+            del col
+        
+        mid = [0, 0, 0]
+        output['adv'] = routes['day_adv']
+        output['dow'] = routes['day_week'].map({
+            '星期一': [0, 0, 1], '星期二': mid, '星期三': mid, '星期四': mid, 
+            '星期五': [1, 0, 0], '星期六': [1, 1, 0], '星期日': [0, 1, 1]})
+        
+        month = lambda x: pandas.Timestamp.fromordinal(x).month
+        output['month'] = routes['date_flight'].map(month) - routes['date_coll'].map(month)
+        output['month'] = output['month'].map(lambda x: False if x else True)
+        output['price'] = routes['price_mean']
+        
+        return output
+    
+    
+if __name__ == "__main__":
+    rebuild = Rebuilder('2022-02-17')
+    rebuild.append_data()
+    rebuild.get_route().to_csv("route_test.csv", index=False)
