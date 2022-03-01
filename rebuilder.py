@@ -24,7 +24,7 @@ class Rebuilder():
     Time are included as a detailed view. 
     Aircraft types are ignored for little contribution.
     
-    Merger
+    Data formatter
     -----
     Merge all rebuilt data to `pandas.DataFrame`
     
@@ -32,6 +32,7 @@ class Rebuilder():
     
             Note: Save the merged data to a csv file manually for further usage.
     
+    - `check`: Check all data by sum flights of one route on each date and collect date.
     
     Data
     -----
@@ -259,9 +260,9 @@ class Rebuilder():
         self.__files.clear()
         self.__unlink.clear()
         if clear_rebuilt:
+            self.__merge.clear()
             self.__merge = []
-        warn = self.__warn
-        self.__warn = 0
+        warn, self.__warn = self.__warn, 0 
         return warn
     
     @staticmethod
@@ -318,6 +319,63 @@ class Rebuilder():
         print()
         return pandas.concat(frame)
     
+    
+    def check(self, data: pandas.DataFrame = None, path: Path = Path("check.xlsx")):
+        if not isinstance(data, pandas.DataFrame):
+            if len(self.__merge):
+                data = self.__merge.copy(False)
+            else:
+                print("ERROR: No data frame is loaded!")
+                return None
+        
+        if 'density_day' not in data.keys():
+            data['density_day'] = data.groupby(["date_flight", \
+                "route", "date_coll"])['date_flight'].transform("count")
+        
+        density = data.groupby(['route'])
+        errors = {"密度过低": {}}
+        error = errors['密度过低']
+        total, idct, percent = len(data), 0, -1
+        for (route, ordinal), routes in data.groupby(['route', 'date_flight']):
+            idct += len(routes)
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\r check >> {percent:03d}", end = '%')
+            if density.get_group(route)['density_day'].mean() <= 5:
+                continue
+            day = Timestamp.fromordinal(ordinal).date()
+            top = routes['density_day'].quantile(q = 0.8)
+            bottom = routes['density_day'].quantile(q = 0.2)
+            
+            diff = top - bottom
+            bottom -=  2 * diff
+            low = routes.loc[routes['density_day'] < bottom, :]
+            low = low.loc[low['day_adv'] > 3, :].get('date_coll')
+            if len(low):
+                error[(route, day)] = [len(low)] + \
+                    list(Timestamp.fromordinal(coll).date() for coll in low.unique())
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.append(('异常', '航线', '日期', '异常总数', '收集日期'))
+        ws.column_dimensions['B'].width = 14
+        ws.auto_filter.ref, ws.freeze_panes = 'A1:C1', 'A2'
+        row = 1
+        for idx in range(1, 6):
+            ws.cell(row ,idx).font = Font(bold = "b")
+            ws.alignment = Alignment("center", "center")
+        for key in errors.keys():
+            for error in errors[key].keys():
+                ws.append([key, *error] + errors[key][error])
+                row += 1
+                for idx in range(1, len(errors[key][error])):
+                    ws.cell(row, 4 + idx).number_format = "mm\"-\"dd"
+        for idx in range(2, ws.max_row):
+            ws.cell(idx ,3).number_format = "mm\"-\"dd"
+        
+        wb.save(path)
+        wb.close
+        
     
     def dates(self, detailed: bool = True, path: Path | str = Path(), file: str = '') -> None:
         '''Date overview by date of collect and date of flight
@@ -1086,7 +1144,7 @@ class Rebuilder():
             for cols in ws.iter_cols(2, ws.max_column, 2, ws.max_row):
                 for cell in cols:
                     cell.number_format = "0.00%"
-            cell = ws.cell(ws.max_row, 1, '返回索引')
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
             cell.hyperlink = "#'索引-INDEX'!A1"
             cell.font = Font(u = "single", color = "0070C0")
             cell = ws.cell(ws.max_row + 1, 1, '返程')
