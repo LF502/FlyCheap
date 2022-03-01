@@ -1,6 +1,3 @@
-from pathlib import Path
-from typing import overload
-
 class CivilAviation: 
     '''
     Database for Civil Aviation
@@ -16,9 +13,9 @@ class CivilAviation:
     
     Methods
     -----
-    - Converter: code-name-airport
-    - Multi-airport: BJS, SHA, CTU
-    - routes: routes that can be skipped
+    - Converter: convert city code, city name, airport code...
+    - Multi-airport: BJS, SHA, CTU, city name...
+    - Routes: routes that can be skipped...
     '''
     def __init__(self) -> None: 
 
@@ -395,19 +392,20 @@ class CivilAviation:
             ('WUX', 'INC'), ('INC', 'DLC'), ('SJW', 'DLC'), ('SHE', 'LHW'), 
             }
     
-    def get_airfare(self, *args) -> int:
+    def get_airfare(self, *args: str) -> int:
         '''Get route's airfare from dep city to arr city'''
         if len(args) == 1:
             arg = args[0]
-            if isinstance(arg, Path):
-                arg = arg.name
-            return self.get_airfare(arg[:3], arg[4:7])
+            if not isinstance(arg, str):
+                return 0
+            return self.get_airfare(arg.upper()[:3], arg.upper()[4:7])
         elif len(args) == 2:
-            arr, dep = args
-            if not (arr.isupper() and dep.isupper()):
+            arr, dep = (arg.upper() for arg in args)
+            if not dep.isupper():
                 dep = self.to_code(self.from_name(dep))
+            if not arr.isupper():
                 arr = self.to_code(self.from_name(arr))
-            if self.__airfare.get((dep, arr), 0):
+            if (dep, arr) in self.__airfare.keys():
                 return self.__airfare.get((dep, arr))
             else:
                 return self.__airfare.get((arr, dep), 0)
@@ -435,11 +433,12 @@ class CivilAviation:
         '''Get city name from airport code'''
         return self.__airportCity.get(__str, None)
     
-    def to_code(self, __str: str, /) -> str:
+    def to_code(self, __str: str, __multi: bool = False, /) -> str:
         '''Get city code from given name
         
-        For multi-airport cities, get airport code if given airport name'''
-        return self.__airportCode.get(__str, None)
+        `True`: For multi-airport cities, get airport code if given airport name'''
+        return self.__airportCode.get(__str, None) if __multi else \
+            self.__airportCode.get(self.from_name(__str), None)
     
     @property
     def skipped_routes(self):
