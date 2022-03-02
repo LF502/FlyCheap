@@ -7,7 +7,7 @@ class CivilAviation:
     - airports: `dict[str, float]`, airport factor
     - cityClass: `dict[str, float]`, city class factor
     - cityLocation: `dict[str, float]`, city location factor
-    - tourism: `set`, inland tourism cities
+    - tourism: `set`, small inland city with tourism
     - airfare: `dict[tuple[str, str], int]`, 100% route price
     - routes: `set[tuple[str, str]]`, inactive / low-density routes
     
@@ -111,6 +111,7 @@ class CivilAviation:
             '郑州': 'CGO', '中卫': 'ZHY', '舟山': 'HSN', '珠海': 'ZUH', 
             '遵义(茅台)': 'WMT', '遵义(新舟)': 'ZYI', '遵义': 'ZYI',
             '香格里拉(迪庆)': 'DIG', '香格里拉': 'DIG', '呼伦贝尔': 'HLD',
+            '邵阳': 'WGN', '营口': 'YKH', 
             }
 
         self.airports = {
@@ -300,7 +301,18 @@ class CivilAviation:
             ('INC', 'URC'): 1730, ('INC', 'TAO'): 1550, ('INC', 'CGO'): 1040, 
             ('KWE', 'BJS'): 1980, ('KWE', 'HRB'): 2730, ('KWE', 'SHA'): 1850, 
             ('KWE', 'NKG'): 1560, ('KWE', 'HGH'): 1700, ('KWE', 'CAN'): 1510, 
-            ('KWE', 'XIY'): 1010, ('KWE', 'FOC'): 1620
+            ('KWE', 'XIY'): 1010, ('KWE', 'FOC'): 1620, ('WGN', 'CSX'): 880, 
+            ('HYN', 'KMG'): 2380, ('SHE', 'NTG'): 1450, ('XNN', 'URC'): 1930, 
+            ('XIY', 'UYN'): 1200, ('SZX', 'YTY'): 1550, ('XMN', 'JNG'): 1330, 
+            ('KOW', 'XMN'): 900, ('URC', 'MIG'): 2180, ('CAN', 'XNN'): 2680, 
+            ('XNN', 'BJS'): 2500, ('SYX', 'XNN'): 2750, ('BPE', 'SJW'): 1100, 
+            ('TYN', 'HGH'): 1360, ('SHA', 'TYN'): 1550, ('YIH', 'TYN'): 940, 
+            ('HGH', 'YIH'): 1100, ('RIZ', 'WUH'): 950, ('YNT', 'CTU'): 1840, 
+            ('YIW', 'SYX'): 1800, ('KMG', 'WNH'): 770, ('LNJ', 'KMG'): 1210, 
+            ('NKG', 'MIG'): 1700, ('LJG', 'CTU'): 1280, ('NTG', 'HRB'): 1840, 
+            ('CSX', 'LXA'): 2640, ('BJS', 'YIH'): 1500, ('WEH', 'CTU'): 1900, 
+            ('NTG', 'CGO'): 960, ('CGQ', 'ZUH'): 2860, ('CGQ', 'YTY'): 1540, 
+            ('LYG', 'CGQ'): 1200, ('KWE', 'HAK'): 1530
             }
         
         self.routes_inactive = {
@@ -390,6 +402,7 @@ class CivilAviation:
             ('SJW', 'CSX'), ('HFE', 'INC'), ('HAK', 'INC'), ('CZX', 'INC'), 
             ('SHE', 'INC'), ('CGQ', 'URC'), ('HFE', 'LHW'), ('CZX', 'CSX'), 
             ('WUX', 'INC'), ('INC', 'DLC'), ('SJW', 'DLC'), ('SHE', 'LHW'), 
+            ('CGQ', 'WUX'), ('SJW', 'NKG'), ('INC', 'TAO'), ('HRB', 'CZX'), 
             }
     
     def get_airfare(self, *args: str) -> int:
@@ -431,7 +444,13 @@ class CivilAviation:
     
     def from_code(self, __str: str, /) -> str:
         '''Get city name from airport code'''
-        return self.__airportCity.get(__str, None)
+        if self.__airportCity.get(__str, None):
+            return self.__airportCity.get(__str)
+        else:
+            for key, value in self.__airportCode.items():
+                if value == __str:
+                    return key
+        return None
     
     def to_code(self, __str: str, __multi: bool = False, /) -> str:
         '''Get city code from given name
