@@ -55,7 +55,8 @@ class Rebuilder():
     def __init__(self, root: Path | str = Path(), day_limit: int = 0) -> None:
         
         self.__airData = CivilAviation()
-        self.__merge = []
+        self.__merge = pandas.DataFrame()
+        self.__preprocess = pandas.DataFrame()
         
         self.__header_min = {
             'date_flight', 'day_week', 'airline', 'type', 'dep',
@@ -261,7 +262,9 @@ class Rebuilder():
         self.__unlink.clear()
         if clear_rebuilt:
             self.__merge.clear()
-            self.__merge = []
+            self.__merge = pandas.DataFrame()
+            self.__preprocess.clear()
+            self.__preprocess = pandas.DataFrame()
         warn, self.__warn = self.__warn, 0 
         return warn
     
@@ -1171,42 +1174,93 @@ class Rebuilder():
         wb.close()
     
     
-    def get_route(self) -> pandas.DataFrame:
-        data, output = self.__merge.copy(False), pandas.DataFrame()
-        time = {
-            8: [0, 1], 9: [0, 1], 10: [1, 1], 11: [1, 1], 12: [1, 1], 13: [1, 1], 
-            14: [1, 1], 15: [1, 1], 16: [1, 1], 17: [1, 0], 18: [1, 0], 19: [1, 0], }
-        data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
-            "date_flight", "dep", "arr"])["price_rate"].transform("mean")
-        data['price_mean'] = data.groupby(["date_coll", "date_flight", \
-            "dep", "arr"])["price_rate"].transform("mean")
-        data['time'] = data['hour_dep'].map(lambda x: time.get(x, [0, 0]))
-        routes = data.drop_duplicates(['dep', 'arr', "date_coll", "date_flight"])
-        routes = routes[['dep', 'arr', 'day_adv', 'day_week', 'date_flight', \
-            'date_coll', 'price_mean']]
+    def preprocessed(self) -> pandas.DataFrame:
+        '''
+        Input
+        -----
+        Load merged data, preprocess
+        
+        Output
+        -----
+        return a `pandas.DataFrame`
+        
+        - dep: `tuple`, includes:
+            - `float`: departure city airport ratio
+            - `float`: class
+            - `float`: location
+            - `bool`: True for small inland city with tourism
+            - `bool`: True for secondary airport
+        - arr: `tuple`, includes:
+            - `float`: arrival city airport ratio (compared to dep)
+            - `float`: class (compared to dep)
+            - `float`: location (compared to dep)
+            - `bool`: True for small inland city with tourism
+            - `bool`: True for secondary airport
+        - dens: `int`, average daily density
+        - adv: `int`, days advanced
+        - dow: `tuple`, sequence for day of week
+        - month: `bool`, True for this month
+        - time: `tuple`, sequence for departure time
+        - comp: `int`, number of airlines operating
+        - min: `float`, minimum price rate
+        - mean: `float`, average price rate
+        - max: `float`, maximum price rate
+        
+        
+        '''
+        data, output = self.__merge.copy(False), self.__preprocess
+        if len(self.__preprocess):
+            return self.__preprocess
+        data['time'] = data['hour_dep'].map({
+            5: (0, 0, 1), 6: (0, 0, 1), 7: (0, 0, 1), 20: (0, 0, 1), 
+            8: (0, 1, 1), 18: (0, 1, 1), 19: (0, 1, 1), 
+            9: (1, 1, 0), 16: (1, 1, 0), 17: (1, 1, 0), 
+            10: (1, 1, 1), 11: (1, 1, 1), 12: (1, 1, 1), 
+            13: (1, 1, 1), 14: (1, 1, 1), 15: (1, 1, 1),
+            21: (1, 0, 0), 22: (1, 0, 0), 23: (1, 0, 0), 24: (1, 0, 0)})
+        rates = data.groupby(['dep', 'arr', 'time', 'date_coll', 'date_flight'])['price_rate']
+        for key in 'min', 'mean', 'max':
+            data[key] = rates.transform(key)
+        data['dens'] = data.groupby(['dep', 'arr', 'date_coll', \
+            'date_flight'])['time'].transform('count')
+        data['dens'] = data.groupby(['dep', 'arr'])['dens'].transform('mean')
+        data['time_comp'] = data.groupby(['dep', 'arr', 'time', \
+            'date_coll'])['airline'].transform('nunique')
+        routes = data.drop_duplicates(['dep', 'arr', 'time', 'date_coll', 'date_flight'])
+        routes = routes[['dep', 'arr', 'time', 'day_adv', 'day_week', 'date_flight', \
+            'date_coll', 'dens', 'time_comp', 'min', 'mean', 'max']].reset_index()
         
         multi_ap = lambda x: True if '大兴' in x or '天府' in x or '浦东' in x else False
         tourism = lambda x: True if self.__airData.cityClass.get(x, 0.1) >= 0.8 or x in \
             self.__airData.tourism or self.__airData.cityLocation.get(x) <= 0.1 else False
-        for key in ('dep', 'arr'):
-            col, _data = pandas.DataFrame(), routes[key]
-            col['a'] = _data.map(self.__airData.airports)
-            col['c'] = _data.map(self.__airData.cityClass)
-            col['l'] = _data.map(self.__airData.cityLocation)
-            col['t'], col['m'] = _data.map(tourism), _data.map(multi_ap)
-            output[key] = col.to_numpy().tolist()
-            del col
+        col, dep, arr = pandas.DataFrame(), routes['dep'], routes['arr']
+        col['a'] = dep.map(self.__airData.airports)
+        col['c'] = dep.map(self.__airData.cityClass)
+        col['l'] = dep.map(self.__airData.cityLocation)
+        col['t'], col['m'] = dep.map(tourism), dep.map(multi_ap)
+        output['dep'] = col.to_numpy().tolist()
+        col['a'] = arr.map(self.__airData.airports)
+        col['c'] = (arr.map(self.__airData.cityClass) - col['c']).round(1)
+        col['l'] = (arr.map(self.__airData.cityLocation) - col['l']).round(1)
+        col['t'], col['m'] = arr.map(tourism), arr.map(multi_ap)
+        output['arr'] = col.to_numpy().tolist()
+        del col, dep, arr
+        output['dep'] = output['dep'].apply(lambda x: tuple(x))
+        output['arr'] = output['arr'].apply(lambda x: tuple(x))
+        output['dens'] = routes['dens'].round(1)
         
-        mid = [0, 0, 0]
+        mid = (0, 0, 0)
         output['adv'] = routes['day_adv']
         output['dow'] = routes['day_week'].map({
-            '星期一': [0, 0, 1], '星期二': mid, '星期三': mid, '星期四': mid, 
-            '星期五': [1, 0, 0], '星期六': [1, 1, 0], '星期日': [0, 1, 1]})
+            '星期一': (0, 0, 1), '星期二': mid, '星期三': mid, '星期四': (1, 0, 0), 
+            '星期五': (1, 1, 0), '星期六': (1, 1, 1), '星期日': (0, 1, 1)})
         
         month = lambda x: pandas.Timestamp.fromordinal(x).month
         output['month'] = routes['date_flight'].map(month) - routes['date_coll'].map(month)
         output['month'] = output['month'].map(lambda x: False if x else True)
-        output['price'] = routes['price_mean']
+        output['time'], output['comp'] = routes['time'], routes['time_comp'].astype('int32')
+        for key in 'min', 'mean', 'max':
+            output[key] = routes[key].round(4)
         
         return output
     
@@ -1214,4 +1268,4 @@ class Rebuilder():
 if __name__ == "__main__":
     rebuild = Rebuilder('2022-02-17')
     rebuild.append_data()
-    rebuild.get_route().to_csv("route_test.csv", index=False)
+    rebuild.preprocessed().to_csv("route_test.csv", index=False)
