@@ -1,3 +1,4 @@
+from types import NoneType
 import pandas
 from pandas import Timestamp
 from openpyxl import Workbook
@@ -233,10 +234,10 @@ class Rebuilder():
         data = pandas.read_csv(Path(path))
         if not self.__header_min < set(data.keys()):
             print("ERROR: Required header missing!")
-            return 0
+            return None
         elif not self.__header_req < set(data.keys()):
             print("ERROR: Merge data by merge method first!")
-            return 0
+            return None
         if len(data) > 0:
             if self.__day_limit:
                 data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
@@ -244,7 +245,7 @@ class Rebuilder():
             return data
         else:
             print("ERROR: No valid data loaded!")
-            return 0
+            return None
     
     
     def reset(self, unlink_file: bool = True, clear_rebuilt: bool = False) -> int:
@@ -1174,33 +1175,33 @@ class Rebuilder():
         wb.close()
     
     
-    def preprocessed(self) -> pandas.DataFrame:
+    def preprocess(self, path: Path | str | None = None) -> pandas.DataFrame:
         '''
         Input
         -----
-        Load merged data, preprocess
+        Load merged data by `path` or `append_data()`, preprocess
         
         Output
         -----
         return a `pandas.DataFrame`
         
-        - dep: `tuple`, includes:
+        - dep: `tuple`, includes...
             - `float`: departure city airport ratio
             - `float`: class
             - `float`: location
-            - `bool`: True for small inland city with tourism
-            - `bool`: True for secondary airport
-        - arr: `tuple`, includes:
+            - `bool`: `True` for tourist cities, costal cities and tourism centers
+            - `bool`: `True` for secondary airport
+        - arr: `tuple`, includes...
             - `float`: arrival city airport ratio (compared to dep)
             - `float`: class (compared to dep)
             - `float`: location (compared to dep)
-            - `bool`: True for small inland city with tourism
-            - `bool`: True for secondary airport
-        - dens: `int`, average daily density
+            - `bool`: `True` for tourist cities, costal cities and tourism centers
+            - `bool`: `True` for secondary airport
+        - dens: `float`, average daily density
         - adv: `int`, days advanced
-        - dow: `tuple`, sequence for day of week
-        - month: `bool`, True for this month
-        - time: `tuple`, sequence for departure time
+        - dow: `tuple`, day of week sequence
+        - month: `bool`, `True` for this month
+        - time: `tuple`, departure time sequence
         - comp: `int`, number of airlines operating
         - min: `float`, minimum price rate
         - mean: `float`, average price rate
@@ -1208,16 +1209,20 @@ class Rebuilder():
         
         
         '''
-        data, output = self.__merge.copy(False), self.__preprocess
         if len(self.__preprocess):
             return self.__preprocess
+        if (not len(self.__merge)) or path:
+            if isinstance(self.append_data(path), NoneType):
+                print('ERROR: No data loaded or incorrect path!')
+                return None
+        data, output = self.__merge.copy(False), self.__preprocess
         data['time'] = data['hour_dep'].map({
-            5: (0, 0, 1), 6: (0, 0, 1), 7: (0, 0, 1), 20: (0, 0, 1), 
-            8: (0, 1, 1), 18: (0, 1, 1), 19: (0, 1, 1), 
-            9: (1, 1, 0), 16: (1, 1, 0), 17: (1, 1, 0), 
-            10: (1, 1, 1), 11: (1, 1, 1), 12: (1, 1, 1), 
-            13: (1, 1, 1), 14: (1, 1, 1), 15: (1, 1, 1),
+            5: (0, 0, 1), 6: (0, 0, 1), 7: (0, 0, 1), 8: (0, 1, 1), 
+            9: (1, 1, 0), 10: (1, 1, 1), 11: (1, 1, 1), 12: (1, 1, 1), 
+            13: (1, 1, 1), 14: (1, 1, 1), 15: (1, 1, 1), 16: (1, 1, 0), 
+            17: (1, 1, 0), 18: (0, 1, 1), 19: (0, 1, 1), 20: (0, 0, 1), 
             21: (1, 0, 0), 22: (1, 0, 0), 23: (1, 0, 0), 24: (1, 0, 0)})
+        data.dropna(inplace = True)
         rates = data.groupby(['dep', 'arr', 'time', 'date_coll', 'date_flight'])['price_rate']
         for key in 'min', 'mean', 'max':
             data[key] = rates.transform(key)
@@ -1225,28 +1230,28 @@ class Rebuilder():
             'date_flight'])['time'].transform('count')
         data['dens'] = data.groupby(['dep', 'arr'])['dens'].transform('mean')
         data['time_comp'] = data.groupby(['dep', 'arr', 'time', \
-            'date_coll'])['airline'].transform('nunique')
+            'date_coll'])['airline'].transform('nunique').astype('int32')
         routes = data.drop_duplicates(['dep', 'arr', 'time', 'date_coll', 'date_flight'])
         routes = routes[['dep', 'arr', 'time', 'day_adv', 'day_week', 'date_flight', \
             'date_coll', 'dens', 'time_comp', 'min', 'mean', 'max']].reset_index()
         
-        multi_ap = lambda x: True if '大兴' in x or '天府' in x or '浦东' in x else False
-        tourism = lambda x: True if self.__airData.cityClass.get(x, 0.1) >= 0.8 or x in \
-            self.__airData.tourism or self.__airData.cityLocation.get(x) <= 0.1 else False
+        multi_ap = lambda x: 0 if '大兴' in x or '天府' in x or '浦东' in x else 1
+        tourism = lambda x: 1 if self.__airData.cityClass.get(x, 0.1) >= 0.8 or x in \
+            self.__airData.tourism or self.__airData.cityLocation.get(x) <= 0.1 else 0
         col, dep, arr = pandas.DataFrame(), routes['dep'], routes['arr']
         col['a'] = dep.map(self.__airData.airports)
         col['c'] = dep.map(self.__airData.cityClass)
         col['l'] = dep.map(self.__airData.cityLocation)
         col['t'], col['m'] = dep.map(tourism), dep.map(multi_ap)
         output['dep'] = col.to_numpy().tolist()
+        output['dep'] = output['dep'].apply(lambda x: tuple(x))
         col['a'] = arr.map(self.__airData.airports)
-        col['c'] = (arr.map(self.__airData.cityClass) - col['c']).round(1)
-        col['l'] = (arr.map(self.__airData.cityLocation) - col['l']).round(1)
+        col['c'] = (arr.map(self.__airData.cityClass))
+        col['l'] = (arr.map(self.__airData.cityLocation))
         col['t'], col['m'] = arr.map(tourism), arr.map(multi_ap)
         output['arr'] = col.to_numpy().tolist()
-        del col, dep, arr
-        output['dep'] = output['dep'].apply(lambda x: tuple(x))
         output['arr'] = output['arr'].apply(lambda x: tuple(x))
+        del col, dep, arr, rates
         output['dens'] = routes['dens'].round(1)
         
         mid = (0, 0, 0)
@@ -1258,7 +1263,7 @@ class Rebuilder():
         month = lambda x: pandas.Timestamp.fromordinal(x).month
         output['month'] = routes['date_flight'].map(month) - routes['date_coll'].map(month)
         output['month'] = output['month'].map(lambda x: False if x else True)
-        output['time'], output['comp'] = routes['time'], routes['time_comp'].astype('int32')
+        output['time'], output['comp'] = routes['time'], routes['time_comp']
         for key in 'min', 'mean', 'max':
             output[key] = routes[key].round(4)
         
@@ -1267,5 +1272,6 @@ class Rebuilder():
     
 if __name__ == "__main__":
     rebuild = Rebuilder('2022-02-17')
-    rebuild.append_data()
-    rebuild.preprocessed().to_csv("route_test.csv", index=False)
+    rebuild.preprocess().to_csv("route_test.csv", index=False)
+    
+    
