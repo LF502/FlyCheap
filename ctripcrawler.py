@@ -46,7 +46,8 @@ class CtripCrawler():
 
         '''Day range preprocess'''
         currDate = date.today().toordinal()
-        if currDate >= self.flightDate.toordinal():   # If collect day is behind today, change the beginning date and days of collect.
+        if currDate >= self.flightDate.toordinal():
+            # If collect day is behind today, change the beginning date and days of collect.
             self.ignore_threshold = 0
             self.days -= currDate - self.flightDate.toordinal() + 1
             self.flightDate = self.flightDate.fromordinal(currDate + 1)
@@ -67,7 +68,7 @@ class CtripCrawler():
 
         self.__warn = 0
         self.__idct = 0
-        self.__avgTime = 3.5 if with_return else 1.7
+        self.__avgTime = 2.9 if with_return else 1.3
 
         self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
         self.header = {"Content-Type": "application/json;charset=utf-8", 
@@ -158,42 +159,37 @@ class CtripCrawler():
 
 
     @property
-    def skip(self) -> set:
+    def skips(self) -> set[tuple[str, str]]:
         '''Ignore cities with few flights.
         If two cities given are too close or not in analysis range, skip, 
-        by returning matrix coordinates in set. '''
+        by returning matrix routes in set. '''
         if self.ignore_threshold >= 3:
-            ignore_routes = self.__airData.routes_inactive | self.__airData.routes_low
+            ignores = self.__airData.routes_inactive | self.__airData.routes_low
         elif self.ignore_threshold > 0:
-            ignore_routes = self.__airData.routes_inactive
+            ignores = self.__airData.routes_inactive
         else:
-            ignore_routes = set()
-  
+            ignores = set()
         if self.ignore_routes is not None and isinstance(self.ignore_routes, set):
-            ignore_routes = ignore_routes.union(self.ignore_routes, ignore_routes)
+            ignores |= self.ignore_routes
         
-        ignore_cities = set()
-        for i in range(self.__codesum):
-            for j in range(i, self.__codesum):
+        skips = set()
+        for dep in self.cityList:
+            for arr in self.cityList[self.cityList.index(dep): ]:
                 # If the city tuple is the same or found in the set, do not process.
-                if i == j or self.cityList[i] == self.cityList[j] or \
-                    (self.cityList[i], self.cityList[j]) in ignore_routes or \
-                    (self.cityList[j], self.cityList[i]) in ignore_routes:
-                    ignore_cities.add((i, j))
-        return ignore_cities
+                if dep == arr or (dep, arr) in ignores or (arr, dep) in ignores:
+                    skips.add((dep, arr))
+        return skips
 
     @property
-    def coordinates(self) -> list[tuple[int, int]]:
-        '''Get matrix-like coordinates (dep city index, arr city index), and dcity > acity'''
-        ignore_cities = self.skip
-        coordinates = []
-        for i in range(self.__codesum):
-            for j in range(i, self.__codesum):
-                if (i, j) in ignore_cities:
+    def routes(self) -> list[tuple[str, str]]:
+        '''Get matrix-like routes in list of tuple(dep city, arr city)'''
+        routes = []
+        for dep in self.cityList:
+            for arr in self.cityList[self.cityList.index(dep): ]:
+                if (dep, arr) in self.skips:
                     continue
-                else:
-                    coordinates.append((i, j))
-        return coordinates
+                routes.append((dep, arr))
+        return routes
 
     @staticmethod
     def exits(__code: int = 0) -> None:
@@ -247,7 +243,8 @@ class CtripCrawler():
                                      "acityname": acityname, "date": flightDate.isoformat(),}]
 
         try:
-            response = post(self.url, data = dumps(payload), headers = header, proxies = proxy, timeout = 10)   # -> json()
+            response = post(
+                self.url, data = dumps(payload), headers = header, proxies = proxy, timeout = 10)
             routeList = loads(response.text).get('data').get('routeList')   # -> list
         except:
             try:
@@ -271,13 +268,13 @@ class CtripCrawler():
                         continue    # Shared flights not collected
                     airlineName = flight.get('airlineName')
                     if '旗下' in airlineName:   # Airline name should be as simple as possible
-                        airlineName = airlineName.split('旗下', 1)[1]   # Convert the time string to a time class
+                        airlineName = airlineName.split('旗下', 1)[1]   # Convert time
                     departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
                     arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
                     if d_multiairport:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportInfo').get('airportName')
                         departureName = dcityname + departureName.strip('成都')[:2]
-                    elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
+                    elif not departureName:
                         departureName = flight.get('departureAirportInfo').get('cityName')
                     if a_multiairport:
                         arrivalName = flight.get('arrivalAirportInfo').get('airportName')
@@ -289,9 +286,9 @@ class CtripCrawler():
                     ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
                     price = ticket.get('price').get('price')
                     rate = ticket.get('price').get('rate')
-                    datarows.append([flightDate, dow, airlineName, craftType, departureName, arrivalName, 
-                                        departureTime, arrivalTime, price, rate, ])
-                        # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
+                    datarows.append([
+                        flightDate, dow, airlineName, craftType, departureName, 
+                        arrivalName, departureTime, arrivalTime, price, rate])
             except Exception as error:
                 print(' WARN:', error, f'in {dcity}-{acity} ', end = flightDate.isoformat())
                 self.__warn += 1
@@ -311,7 +308,8 @@ class CtripCrawler():
                      values_only: bool = False, with_return: bool = True) -> Path:
         wbook = Workbook()
         wsheet = wbook.active
-        wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', '出发时', '到达时', '价格', '折扣'))
+        wsheet.append(('日期', '星期', '航司', '机型', '出发机场', '到达机场', \
+            '出发时', '到达时', '价格', '折扣'))
         
         if values_only:
             for data in datarows:
@@ -321,7 +319,8 @@ class CtripCrawler():
             wsheet.column_dimensions['B'].width = 7
             wsheet.column_dimensions['C'].width = 12
             wsheet.column_dimensions['G'].width = wsheet.column_dimensions['H'].width = 7.5
-            wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = wsheet.column_dimensions['J'].width = 6
+            wsheet.column_dimensions['D'].width = wsheet.column_dimensions['I'].width = \
+                wsheet.column_dimensions['J'].width = 6
             for row in wsheet.iter_rows(1, 1, 1, 10):
                 for cell in row:
                     cell.alignment = Alignment(vertical = 'center', horizontal = 'center')
@@ -333,7 +332,7 @@ class CtripCrawler():
                     row.append(Cell(worksheet = wsheet, value = item))
                 for i in range(2, 8):
                     row[i].alignment = Alignment(vertical='center',horizontal='center') # Adjust alignment
-                row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust the dep time and arr time formats
+                row[6].number_format = row[7].number_format = 'HH:MM'  # Adjust time formats
                 row[9].number_format = '0%' # Make the rate show as percentage
                 wsheet.append(row)
 
@@ -346,7 +345,8 @@ class CtripCrawler():
     @staticmethod
     def output_new_ignorance(ignore_threshold: int = 3, ignoreNew: set = set()) -> bool:
         if len(ignoreNew) > 0:
-            with open('IgnoredOrError_{}.txt'.format(ignore_threshold), 'a', encoding = 'UTF-8') as updates:
+            with open('IgnoredOrError_{}.txt'.format(ignore_threshold), \
+                'a', encoding = 'UTF-8') as updates:
                 updates.write(str(ignoreNew) + '\n')
             return True
         else:
@@ -378,7 +378,6 @@ class CtripCrawler():
         
         part: `int`, the index of the running part, default: 0
         '''
-        print('\rGetting data...')
         filesum = 0
         ignoreNew = set()
 
@@ -391,32 +390,35 @@ class CtripCrawler():
         values_only: bool = kwargs.get('values_only', False)
         parts: int = kwargs.get('parts', 0)
         part: int = kwargs.get('part', 0)
-        coordinates = self.coordinates
+        
+        '''Part separates'''
+        routes = []
+        for dep, arr in self.routes:
+            if not Path(path / f'{dep}~{arr}.xlsx').exists():
+                routes.append((dep, arr))
         try:
             if part > 0 and parts > 1:
-                part_len = int(len(coordinates) / parts)
-                coordinates = coordinates[(parts - 1) * part_len : ] if part >= parts \
-                    else coordinates[(part - 1) * part_len : part * part_len]
+                part_len = int(len(routes) / parts)
+                routes = routes[(parts - 1) * part_len : ] if part >= parts \
+                    else routes[(part - 1) * part_len : part * part_len]
         finally:
-            self.__total = len(coordinates) * self.days
+            self.__total = len(routes) * self.days
         
         '''Data collecting controller'''
-        for dcity, acity in coordinates:
-            if Path(path / f'{self.cityList[dcity]}~{self.cityList[acity]}.xlsx').exists():
-                print(f'{self.cityList[dcity]}-{self.cityList[acity]} already collected, skip')
+        for dep, arr in routes:
+            if Path(path / f'{dep}~{arr}.xlsx').exists():
+                print(f'{dep}-{arr} already collected, skip')
                 self.__total -= self.days
                 continue    # Already processed.
             collectDate = self.flightDate   #reset
             datarows = []
             for i in range(self.days):
-                dcityname = self.cityList[dcity]
-                acityname = self.cityList[acity]
-                currTime = self.show_progress(dcityname, acityname)
+                currTime = self.show_progress(dep, arr)
 
                 '''Get OUTbound flights data, 3 attempts for ample data'''
                 for j in range(3):
                     data_diff = len(datarows)
-                    datarows.extend(self.collector(collectDate, dcityname, acityname))
+                    datarows.extend(self.collector(collectDate, dep, arr))
                     data_diff = len(datarows) - data_diff
                     if data_diff >= self.ignore_threshold:
                         break
@@ -427,18 +429,18 @@ class CtripCrawler():
                 else:
                     if i == 0 and data_diff < self.ignore_threshold:
                         self.__total -= self.days
-                        print(f'\r{dcityname}-{acityname} has {data_diff} flight(s), ignored. ')
-                        ignoreNew.add((dcityname, acityname))
+                        print(f'\r{dep}-{arr} has {data_diff} flight(s), ignored. ')
+                        ignoreNew.add((dep, arr))
                         break
                     elif data_diff < self.ignore_threshold:
-                        print(f' WARN: few data in {dcityname}-{acityname} ', end = collectDate.isoformat())
+                        print(f' WARN: few data in {dep}-{arr} ', end = collectDate.isoformat())
                         self.__warn += 1
 
                 '''Get INbound flights data, 3 attempts for ample data'''
                 if self.with_return:
                     for j in range(3):
                         data_diff = len(datarows)
-                        datarows.extend(self.collector(collectDate, acityname, dcityname))
+                        datarows.extend(self.collector(collectDate, arr, dep))
                         if data_diff >= self.ignore_threshold:
                             break
                         elif i != 0 and data_diff > 0:
@@ -448,32 +450,34 @@ class CtripCrawler():
                     else:
                         if i == 0 and data_diff < self.ignore_threshold:
                             self.__total -= self.days
-                            print(f'\r{acityname}-{dcityname} has {data_diff} flight(s), ignored. ')
-                            ignoreNew.add((acityname, dcityname))
+                            print(f'\r{arr}-{dep} has {data_diff} flight(s), ignored. ')
+                            ignoreNew.add((arr, dep))
                             break
                         elif data_diff < self.ignore_threshold:
-                            print(f' WARN: few data in {acityname}-{dcityname} ', end = collectDate.isoformat())
+                            print(f' WARN: few data in {arr}-{dep} ', end = collectDate.isoformat())
                             self.__warn += 1
 
                 collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
                 self.__idct += 1
-                self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime * (self.__total - 1)) / self.__total
+                self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime \
+                    * (self.__total - 1)) / self.__total
             else:
                 if with_output:
-                    self.__file = self.output_excel(datarows, dcityname, acityname, path, values_only, self.with_return)
+                    self.__file = self.output_excel(datarows, dep, arr, path, values_only, self.with_return)
                     if values_only:
-                        print(f'\r{dcityname}-{acityname} generated!               ')
+                        print(f'\r{dep}-{arr} generated!               ')
                     else:
-                        print(f'\r{dcityname}-{acityname} generated and formatted! ')
+                        print(f'\r{dep}-{arr} generated and formatted! ')
                     filesum += 1
                 else:
-                    print(f'\r{dcityname}-{acityname} collected!               ') 
+                    print(f'\r{dep}-{arr} collected!               ') 
                 yield datarows
 
         if with_output:
             if self.output_new_ignorance(self.ignore_threshold, ignoreNew):
                 print('Ignorance set updated, ', end = '')
-            print(filesum, 'routes collected in', path.name) if filesum > 1 else print(filesum, 'route collected in', path.name)
+            print(filesum, 'routes collected in', path.name) if filesum > 1 \
+                else print(filesum, 'route collected in', path.name)
         if self.__warn:
             print('Total warning(s):', self.__warn)
 
