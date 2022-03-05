@@ -1,10 +1,9 @@
 from types import NoneType
 import pandas
-from pandas import Timestamp
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, differential
 from openpyxl.formatting.rule import Rule
-from datetime import datetime
+from datetime import datetime, date
 from zipfile import ZipFile
 from pathlib import Path
 from civilaviation import CivilAviation
@@ -20,10 +19,10 @@ class Rebuilder():
     - `routes`: Show mean and std by dates and days advanced; show density and ratio by hours.
     - `dates`: Show mean rate by flight dates and collect dates (with day of week and days advanced).
     
-    To view detailed data, set parameter 'detailed = `True`' for more sheets.
-    
-    Time are included as a detailed view. 
-    Aircraft types are ignored for little contribution.
+    - Note:
+        - Excels contain sheets with detailed view.
+        - Time are included as a detailed view. 
+        - Aircraft types are ignored for little contribution.
     
     Data formatter
     -----
@@ -303,7 +302,7 @@ class Rebuilder():
             if percent != int(idct / total * 100):
                 percent = int(idct / total * 100)
                 print(f"\rmerging >> {percent:03d}", end = '%')
-            date_coll = Timestamp.fromisoformat(file.parent.name).toordinal()
+            date_coll = date.fromisoformat(file.parent.name).toordinal()
             data = pandas.read_excel(file, names = header).assign(date_coll = date_coll)    #10
             if self.__day_limit:
                 data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
@@ -347,7 +346,7 @@ class Rebuilder():
                 print(f"\r check >> {percent:03d}", end = '%')
             if density.get_group(route)['density_day'].mean() <= 5:
                 continue
-            day = Timestamp.fromordinal(ordinal).date()
+            day = date.fromordinal(ordinal)
             top = routes['density_day'].quantile(q = 0.8)
             bottom = routes['density_day'].quantile(q = 0.2)
             
@@ -357,7 +356,7 @@ class Rebuilder():
             low = low.loc[low['day_adv'] > 3, :].get('date_coll')
             if len(low):
                 error[(route, day)] = [len(low)] + \
-                    list(Timestamp.fromordinal(coll).date() for coll in low.unique())
+                    list(date.fromordinal(coll) for coll in low.unique())
         
         wb = Workbook()
         ws = wb.active
@@ -381,7 +380,7 @@ class Rebuilder():
         wb.close
         
     
-    def dates(self, detailed: bool = True, path: Path | str = Path(), file: str = '') -> None:
+    def dates(self, path: Path | str = Path(), file: str = '') -> None:
         '''Date overview by date of collect and date of flight
         
         Output separated excel with conditional formats'''
@@ -389,9 +388,9 @@ class Rebuilder():
         if not len(self.__merge):
             self.__merge = self.merge()
         data = self.__merge.sort_values('date_flight')
-        total_flights = sorted(Timestamp.fromordinal(ordinal).date() \
+        total_flights = sorted(date.fromordinal(ordinal) \
             for ordinal in data['date_flight'].unique())
-        total_colls = sorted(Timestamp.fromordinal(ordinal).date() \
+        total_colls = sorted(date.fromordinal(ordinal) \
             for ordinal in data['date_coll'].unique())
         total, idct, percent = len(data), -1, 0
         
@@ -453,7 +452,7 @@ class Rebuilder():
         '''Append date of collect data'''
         sheets_coll = data.groupby(["date_coll"])
         for coll_date, group in sheets_coll:
-            sheet = Timestamp.fromordinal(coll_date).date()
+            sheet = date.fromordinal(coll_date)
             ws = wb_coll.create_sheet(sheet.strftime("%m-%d"))
             row = {}
             footers = ['平均', group["price_rate"].median(), group["price_rate"].mean()]
@@ -465,8 +464,8 @@ class Rebuilder():
                 'week': ["(星期)", None, None], 
                 'adv': ["(提前天数)", None, None]}
             for ordinal in flight_dates:
-                title['date'].append(Timestamp.fromordinal(ordinal).date())
-                title['week'].append(Timestamp.fromordinal(ordinal).isoweekday())
+                title['date'].append(date.fromordinal(ordinal))
+                title['week'].append(date.fromordinal(ordinal).isoweekday())
                 title['adv'].append(ordinal - coll_date)
                 try:
                     footers.append(rows.get_group(ordinal)["price_rate"].mean())
@@ -524,7 +523,7 @@ class Rebuilder():
         '''Append date of flight data'''
         sheets_flight = data.groupby(["date_flight"])
         for flight_date, group in sheets_flight:
-            sheet = Timestamp.fromordinal(flight_date).date()
+            sheet = date.fromordinal(flight_date)
             ws = wb_flight.create_sheet(sheet.strftime("%m-%d"))
             row = {}
             footers = ['平均', group["price_rate"].median(), group["price_rate"].mean()]
@@ -533,7 +532,7 @@ class Rebuilder():
             routes, rows = group.groupby(["route"]), group.groupby(["date_coll"])
             title = ["航线 \ 收集", "折扣中位", "折扣均值"]
             for ordinal in coll_dates:
-                title.append(Timestamp.fromordinal(ordinal).date())
+                title.append(date.fromordinal(ordinal))
                 try:
                     footers.append(rows.get_group(ordinal)["price_rate"].mean())
                 except:
@@ -641,7 +640,7 @@ class Rebuilder():
         wb_flight.close
     
     
-    def routes(self, detailed: bool = True, path: Path | str = Path(), file: str = ''):
+    def routes(self, path: Path | str = Path(), file: str = ''):
         '''Route overview'''
         if not len(self.__merge):
             self.__merge = self.merge()
@@ -663,7 +662,7 @@ class Rebuilder():
             '折扣平均', '折扣中位', '运营航司', '时段竞争', '日航班数']
         title_adv = {"overview": title + sorted(data['day_adv'].unique())}
         title_hour = title + list(range(5, 25))
-        title_date = title + list(Timestamp.fromordinal(ordinal).date() \
+        title_date = title + list(date.fromordinal(ordinal) \
             for ordinal in data['date_flight'].unique())
         title_coll = {}
         
@@ -830,7 +829,7 @@ class Rebuilder():
                 cell.alignment = Alignment("center", "center")
                 cell.font = Font(bold = "b")
             for ordinal in route_date[name]:
-                day = Timestamp.fromordinal(ordinal).date()
+                day = date.fromordinal(ordinal)
                 ws.append([day, day.isoweekday()] + \
                     footers[name]['date'][ordinal] + route_date[name][ordinal])
             ws.cell(1, 1).hyperlink = "#'索引-INDEX'!A1"
@@ -868,7 +867,7 @@ class Rebuilder():
             '''Append data by date of collect'''
             ws = wb.create_sheet(f"({name})")
             ws.append(['日期\收集日', '星期', '折扣平均', '折扣中位'] + \
-                list(Timestamp.fromordinal(ordinal).date() for ordinal in title_coll[name]))
+                list(date.fromordinal(ordinal) for ordinal in title_coll[name]))
             for idx in range(2, 5):
                 cell = ws.cell(1, idx)
                 cell.alignment = Alignment("center", "center")
@@ -878,7 +877,7 @@ class Rebuilder():
                 cell.number_format = "mm\"-\"dd"
                 cell.alignment = Alignment("center", "center")
             for ordinal in route_coll[name]:
-                day = Timestamp.fromordinal(ordinal).date()
+                day = date.fromordinal(ordinal)
                 ws.append([day, day.isoweekday()] + \
                     footers[name]['date'][ordinal] + route_coll[name][ordinal])
             ws.cell(1, 1).hyperlink = "#'索引-INDEX'!A1"
@@ -929,7 +928,7 @@ class Rebuilder():
         wb.close()
     
     
-    def airlines(self, detailed: bool = True, path: Path | str = Path(), file: str = ''):
+    def airlines(self, path: Path | str = Path(), file: str = ''):
         '''Airline overview'''
         if not len(self.__merge):
             self.__merge = self.merge()
@@ -1092,7 +1091,8 @@ class Rebuilder():
             wb['时刻系数'].append(headers[name] + hour_ratio[name])
             wb['机场计数'].append(headers[name] + dep_ap[name])
         for sheet in ('时刻系数', '航线系数'):
-            for cols in wb[sheet].iter_cols(len(title) + 1, ws.max_column, 2, ws.max_row):
+            ws = wb[sheet]
+            for cols in ws.iter_cols(len(title) + 1, ws.max_column, 2, ws.max_row):
                 for cell in cols:
                     cell.number_format = "0.00%"
         
@@ -1175,34 +1175,38 @@ class Rebuilder():
         wb.close()
     
     
-    def preprocess(self, path: Path | str | None = None) -> pandas.DataFrame:
+    def preprocess(
+        self, path: Path | str | None = None, scaler: bool = True) -> pandas.DataFrame:
         '''
         Input
         -----
-        Load merged data by `path` or `append_data()`, preprocess
+        Load merged data by `path` or `append_data()`
+        
+        Scaler: min-max scale, default: `True`
         
         Output
         -----
-        return a `pandas.DataFrame`
+        Preprocessed data in `pandas.DataFrame`
         
-        - dep: `tuple`, includes...
+        - dep: `tuple`(separated), includes...
             - `float`: departure city airport ratio
             - `float`: class
             - `float`: location
-            - `bool`: `True` for tourist cities, costal cities and tourism centers
-            - `bool`: `True` for secondary airport
-        - arr: `tuple`, includes...
+            - `bool`: `True`(1) for tourist cities, costal cities and tourism centers
+            - `bool`: `True`(1) for secondary airport
+        - arr: `tuple`(separated), includes...
             - `float`: arrival city airport ratio (compared to dep)
             - `float`: class (compared to dep)
             - `float`: location (compared to dep)
-            - `bool`: `True` for tourist cities, costal cities and tourism centers
-            - `bool`: `True` for secondary airport
-        - dens: `float`, average daily density
-        - adv: `int`, days advanced
-        - dow: `tuple`, day of week sequence
-        - month: `bool`, `True` for this month
-        - time: `tuple`, departure time sequence
-        - comp: `int`, number of airlines operating
+            - `bool`: `True`(1) for tourist cities, costal cities and tourism centers
+            - `bool`: `True`(1) for secondary airport
+        - dens: `float`, average daily density -- to min-max scaler
+        - adv: `int`, days advanced -- to min-max scaler
+        - dow: `tuple`(separated), day of week sequence
+        - month: `bool`, `True`(1) for this month
+        - time: `tuple`(separated), departure time sequence
+        - comp: `int`, count of airlines operating in this date -- to min-max scaler
+        - cheap: `int`, count of cheap airlines in this time period -- to min-max scaler
         - min: `float`, minimum price rate
         - mean: `float`, average price rate
         - max: `float`, maximum price rate
@@ -1216,12 +1220,18 @@ class Rebuilder():
                 print('ERROR: No data loaded or incorrect path!')
                 return None
         data, output = self.__merge.copy(False), self.__preprocess
+        rate_error = data.loc[data['price_rate'] == 0, :]
+        if len(rate_error):
+            data['airfare'] = rate_error[['dep', 'arr']].apply(self.__airData.get_airfare)
+            data['price_rate'] = rate_error['price_rate'] / data['airfare']
+            data['price_rate'] = data.loc[data['price_rate'] > 1, :]['price_rate'] = 1
+        
         data['time'] = data['hour_dep'].map({
-            5: (0, 0, 1), 6: (0, 0, 1), 7: (0, 0, 1), 8: (0, 1, 1), 
+            5: (0, 0, 1), 6: (0, 0, 1), 7: (1, 0, 0), 8: (0, 1, 1), 
             9: (1, 1, 0), 10: (1, 1, 1), 11: (1, 1, 1), 12: (1, 1, 1), 
             13: (1, 1, 1), 14: (1, 1, 1), 15: (1, 1, 1), 16: (1, 1, 0), 
-            17: (1, 1, 0), 18: (0, 1, 1), 19: (0, 1, 1), 20: (0, 0, 1), 
-            21: (1, 0, 0), 22: (1, 0, 0), 23: (1, 0, 0), 24: (1, 0, 0)})
+            17: (1, 1, 0), 18: (0, 1, 1), 19: (0, 1, 1), 20: (1, 0, 0), 
+            21: (1, 0, 0), 22: (0, 0, 1), 23: (0, 0, 1), 24: (0, 0, 1)})
         data.dropna(inplace = True)
         rates = data.groupby(['dep', 'arr', 'time', 'date_coll', 'date_flight'])['price_rate']
         for key in 'min', 'mean', 'max':
@@ -1229,49 +1239,46 @@ class Rebuilder():
         data['dens'] = data.groupby(['dep', 'arr', 'date_coll', \
             'date_flight'])['time'].transform('count')
         data['dens'] = data.groupby(['dep', 'arr'])['dens'].transform('mean')
-        data['time_comp'] = data.groupby(['dep', 'arr', 'time', \
-            'date_coll'])['airline'].transform('nunique').astype('int32')
+        data['comp'] = data.groupby(['route', 'date_flight'])['airline'].transform('nunique')
+        data['cheap'] = data.groupby(['route', 'date_flight', 'time'])['airline'].transform(
+            lambda x: len(set(x.unique()) & self.__airData.cheapAir))
+        
         routes = data.drop_duplicates(['dep', 'arr', 'time', 'date_coll', 'date_flight'])
-        routes = routes[['dep', 'arr', 'time', 'day_adv', 'day_week', 'date_flight', \
-            'date_coll', 'dens', 'time_comp', 'min', 'mean', 'max']].reset_index()
+        routes = routes[['route', 'dep', 'arr', 'dens', 'time', 'day_adv', 'day_week', 'date_flight', \
+            'date_coll', 'cheap', 'comp', 'min', 'mean', 'max']].reset_index()
         
-        multi_ap = lambda x: 0 if '大兴' in x or '天府' in x or '浦东' in x else 1
-        tourism = lambda x: 1 if self.__airData.cityClass.get(x, 0.1) >= 0.8 or x in \
-            self.__airData.tourism or self.__airData.cityLocation.get(x) <= 0.1 else 0
-        col, dep, arr = pandas.DataFrame(), routes['dep'], routes['arr']
-        col['a'] = dep.map(self.__airData.airports)
-        col['c'] = dep.map(self.__airData.cityClass)
-        col['l'] = dep.map(self.__airData.cityLocation)
-        col['t'], col['m'] = dep.map(tourism), dep.map(multi_ap)
-        output['dep'] = col.to_numpy().tolist()
-        output['dep'] = output['dep'].apply(lambda x: tuple(x))
-        col['a'] = arr.map(self.__airData.airports)
-        col['c'] = (arr.map(self.__airData.cityClass))
-        col['l'] = (arr.map(self.__airData.cityLocation))
-        col['t'], col['m'] = arr.map(tourism), arr.map(multi_ap)
-        output['arr'] = col.to_numpy().tolist()
-        output['arr'] = output['arr'].apply(lambda x: tuple(x))
-        del col, dep, arr, rates
-        output['dens'] = routes['dens'].round(1)
+        maps = {
+            '_a': self.__airData.airports, 
+            '_c': self.__airData.cityClass, 
+            '_l': self.__airData.cityLocation, 
+            '_t': lambda x: 1 if self.__airData.cityClass.get(x, 0.1) >= 0.8 or x in \
+                self.__airData.tourism or self.__airData.cityLocation.get(x) <= 0.1 else 0, 
+            '_m': lambda x: 0 if '大兴' in x or '天府' in x or '浦东' in x else 1}
+        for name in 'dep', 'arr':
+            for key, map in maps.items():
+                output[name + key] = routes[name].map(map)
         
-        mid = (0, 0, 0)
-        output['adv'] = routes['day_adv']
-        output['dow'] = routes['day_week'].map({
-            '星期一': (0, 0, 1), '星期二': mid, '星期三': mid, '星期四': (1, 0, 0), 
+        output['dens'] = (routes['dens'] - routes['dens'].min()) / (routes['dens'].max() \
+            - routes['dens'].min()) if scaler else routes['dens'].round(1)
+        output['adv'] = routes['day_adv'].apply(lambda x: 1 if x >= 45 else 0 \
+            if x <= 1 else (x - 1) / 44) if scaler else routes['day_adv']
+        
+        dow = routes['day_week'].map({
+            '星期一': (0, 0, 1), '星期二': (0, 1, 0), '星期三': (0, 1, 0), '星期四': (1, 0, 0), 
             '星期五': (1, 1, 0), '星期六': (1, 1, 1), '星期日': (0, 1, 1)})
+        for key in range(3):
+            output[f'dow_{key}'] = list(seq[key] for seq in dow.values)
         
-        month = lambda x: pandas.Timestamp.fromordinal(x).month
-        output['month'] = routes['date_flight'].map(month) - routes['date_coll'].map(month)
-        output['month'] = output['month'].map(lambda x: False if x else True)
-        output['time'], output['comp'] = routes['time'], routes['time_comp']
+        months = lambda x: date.fromordinal(x).month
+        output['month'] = (routes['date_flight'].map(months) - \
+            routes['date_coll'].map(months)).map(lambda x: 0 if x else 1)
+        for key in range(3):
+            output[f'time_{key}'] = list(seq[key] for seq in routes['time'].values)
+        output['comp'] = routes['comp'].apply(lambda x: 0 if x <= 1 else 1 \
+            if x >= 11 else (x - 1) / 10) if scaler else routes['comp']
+        output['cheap'] = routes['cheap'].apply(lambda x: 0 if x <= 0 else 1 \
+            if x >= 3 else x / 3).round(3) if scaler else routes['cheap']
         for key in 'min', 'mean', 'max':
             output[key] = routes[key].round(4)
         
         return output
-    
-    
-if __name__ == "__main__":
-    rebuild = Rebuilder('2022-02-17')
-    rebuild.preprocess().to_csv("route_test.csv", index=False)
-    
-    
