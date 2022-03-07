@@ -1176,13 +1176,23 @@ class Rebuilder():
     
     
     def preprocess(
-        self, path: Path | str | None = None, scaler: bool = True) -> pandas.DataFrame:
+        self, path: Path | str | None = None, scaler: bool = True, 
+        starting_date: date | tuple | int = 0) -> pandas.DataFrame:
         '''
         Input
         -----
         Load merged data by `path` or `append_data()`
         
-        Scaler: min-max scale, default: `True`
+        
+        Parameters
+        -----
+        - scaler: `bool`, min-max scale
+        
+            default: `True`
+        
+        - starting_date: `date` | `tuple` | `int`(ordinal), start of processing date
+        
+            default: `0`, process all
         
         Output
         -----
@@ -1204,7 +1214,7 @@ class Rebuilder():
         - adv: `int`, days advanced -- to min-max scaler
         - dow: `tuple`(separated), day of week sequence
         - month: `bool`, `True`(1) for this month
-        - time: `tuple`(separated), departure time sequence
+        - time: `bool`, `True`(1) for daytime flights
         - comp: `int`, count of airlines operating in this date -- to min-max scaler
         - cheap: `int`, count of cheap airlines in this time period -- to min-max scaler
         - min: `float`, minimum price rate
@@ -1226,13 +1236,7 @@ class Rebuilder():
             data['price_rate'] = rate_error['price_rate'] / data['airfare']
             data['price_rate'] = data.loc[data['price_rate'] > 1, :]['price_rate'] = 1
         
-        data['time'] = data['hour_dep'].map({
-            5: (0, 0, 1), 6: (0, 0, 1), 7: (1, 0, 0), 8: (0, 1, 1), 
-            9: (1, 1, 0), 10: (1, 1, 1), 11: (1, 1, 1), 12: (1, 1, 1), 
-            13: (1, 1, 1), 14: (1, 1, 1), 15: (1, 1, 1), 16: (1, 1, 0), 
-            17: (1, 1, 0), 18: (0, 1, 1), 19: (0, 1, 1), 20: (1, 0, 0), 
-            21: (1, 0, 0), 22: (0, 0, 1), 23: (0, 0, 1), 24: (0, 0, 1)})
-        data.dropna(inplace = True)
+        data['time'] = data['hour_dep'].apply(lambda x: 1 if 9 <= x <= 20 else 0)
         rates = data.groupby(['dep', 'arr', 'time', 'date_coll', 'date_flight'])['price_rate']
         for key in 'min', 'mean', 'max':
             data[key] = rates.transform(key)
@@ -1243,7 +1247,15 @@ class Rebuilder():
         data['cheap'] = data.groupby(['route', 'date_flight', 'time'])['airline'].transform(
             lambda x: len(set(x.unique()) & self.__airData.cheapAir))
         
-        routes = data.drop_duplicates(['dep', 'arr', 'time', 'date_coll', 'date_flight'])
+        routes = data.drop_duplicates(['dep', 'arr', 'time', 'date_coll', 'date_flight']).dropna()
+        if self.__day_limit:
+            routes.drop(routes[routes['day_adv'] > self.__day_limit].index, inplace = True)
+        if isinstance(starting_date, date):
+            starting_date = starting_date.toordinal()
+        elif isinstance(starting_date, tuple) or isinstance(starting_date, list):
+            starting_date = date(*starting_date).toordinal()
+        if isinstance(starting_date, int):
+            routes.drop(routes[routes['date_flight'] < starting_date].index, inplace = True)
         routes = routes[['route', 'dep', 'arr', 'dens', 'time', 'day_adv', 'day_week', 'date_flight', \
             'date_coll', 'cheap', 'comp', 'min', 'mean', 'max']].reset_index()
         
@@ -1263,17 +1275,17 @@ class Rebuilder():
         output['adv'] = routes['day_adv'].apply(lambda x: 1 if x >= 45 else 0 \
             if x <= 1 else (x - 1) / 44) if scaler else routes['day_adv']
         
-        dow = routes['day_week'].map({
-            '星期一': (0, 0, 1), '星期二': (0, 1, 0), '星期三': (0, 1, 0), '星期四': (1, 0, 0), 
-            '星期五': (1, 1, 0), '星期六': (1, 1, 1), '星期日': (0, 1, 1)})
-        for key in range(3):
+        dow = routes['day_week'].map({'星期一': (1, 0, 0, 0, 0), 
+            '星期二': (0, 1, 0, 0, 0), '星期三': (0, 1, 0, 0, 0), 
+            '星期四': (0, 1, 0, 0, 0), '星期五': (0, 0, 1, 0, 0), 
+            '星期六': (0, 0, 0, 1, 0), '星期日': (0, 0, 0, 0, 1)})
+        for key in range(5):
             output[f'dow_{key}'] = list(seq[key] for seq in dow.values)
         
         months = lambda x: date.fromordinal(x).month
         output['month'] = (routes['date_flight'].map(months) - \
             routes['date_coll'].map(months)).map(lambda x: 0 if x else 1)
-        for key in range(3):
-            output[f'time_{key}'] = list(seq[key] for seq in routes['time'].values)
+        output['time'] = routes['time']
         output['comp'] = routes['comp'].apply(lambda x: 0 if x <= 1 else 1 \
             if x >= 11 else (x - 1) / 10) if scaler else routes['comp']
         output['cheap'] = routes['cheap'].apply(lambda x: 0 if x <= 0 else 1 \
