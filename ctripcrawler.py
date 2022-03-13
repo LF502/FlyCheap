@@ -153,11 +153,6 @@ class CtripCrawler():
             'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
         self.__lenAgents = len(self.__userAgents)
 
-
-    def __sizeof__(self) -> int:
-        return self.__total
-
-
     @property
     def skips(self) -> set[tuple[str, str]]:
         '''Ignore cities with few flights.
@@ -186,9 +181,8 @@ class CtripCrawler():
         routes = []
         for dep in self.cityList:
             for arr in self.cityList[self.cityList.index(dep): ]:
-                if (dep, arr) in self.skips:
-                    continue
-                routes.append((dep, arr))
+                if (dep, arr) not in self.skips:
+                    routes.append((dep, arr))
         return routes
 
     @staticmethod
@@ -199,14 +193,6 @@ class CtripCrawler():
                       2: 'city tuple error',3:'day limit error', 4: 'no flight'}
         print(f' Exited for {error_code[__code]}')
         sys.exit()
-
-    @property
-    def file(self) -> Path | None:
-        '''Get current file path, return None if no file generated'''
-        try:
-            return self.__file
-        except:
-            return None
 
     @property
     def proxypool(self) -> dict | None:
@@ -220,7 +206,7 @@ class CtripCrawler():
             time.sleep((round(3 * random(), 2)))
         finally:
             return proxy
-    
+
     @property
     def proxy(self) -> dict:
         return {"http": self.proxylist[int(len(self.proxylist) * random())]}
@@ -342,17 +328,6 @@ class CtripCrawler():
         return file
 
 
-    @staticmethod
-    def output_new_ignorance(ignore_threshold: int = 3, ignoreNew: set = set()) -> bool:
-        if len(ignoreNew) > 0:
-            with open('IgnoredOrError_{}.txt'.format(ignore_threshold), \
-                'a', encoding = 'UTF-8') as updates:
-                updates.write(str(ignoreNew) + '\n')
-            return True
-        else:
-            return False
-
-
     def run(self, with_output: bool = True, **kwargs) -> Generator:
         '''
         Collect all data, output and yield data of city tuple flights collected in list.
@@ -379,7 +354,7 @@ class CtripCrawler():
         part: `int`, the index of the running part, default: 0
         '''
         filesum = 0
-        ignoreNew = set()
+        __ignores = set()
 
         '''Initialize running parameters'''
         path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
@@ -430,7 +405,7 @@ class CtripCrawler():
                     if i == 0 and data_diff < self.ignore_threshold:
                         self.__total -= self.days
                         print(f'\r{dep}-{arr} has {data_diff} flight(s), ignored. ')
-                        ignoreNew.add((dep, arr))
+                        __ignores.add((dep, arr))
                         break
                     elif data_diff < self.ignore_threshold:
                         print(f' WARN: few data in {dep}-{arr} ', end = collectDate.isoformat())
@@ -451,7 +426,7 @@ class CtripCrawler():
                         if i == 0 and data_diff < self.ignore_threshold:
                             self.__total -= self.days
                             print(f'\r{arr}-{dep} has {data_diff} flight(s), ignored. ')
-                            ignoreNew.add((arr, dep))
+                            __ignores.add((arr, dep))
                             break
                         elif data_diff < self.ignore_threshold:
                             print(f' WARN: few data in {arr}-{dep} ', end = collectDate.isoformat())
@@ -462,24 +437,31 @@ class CtripCrawler():
                 self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime \
                     * (self.__total - 1)) / self.__total
             else:
-                if with_output:
-                    self.__file = self.output_excel(datarows, dep, arr, path, values_only, self.with_return)
+                if len(datarows) and with_output:
+                    self.file = self.output_excel(datarows, dep, arr, path, values_only, self.with_return)
                     if values_only:
-                        print(f'\r{dep}-{arr} generated!               ')
+                        print(f'\r{dep}-{arr} collected!               ')
                     else:
-                        print(f'\r{dep}-{arr} generated and formatted! ')
+                        print(f'\r{dep}-{arr} collected and formatted! ')
                     filesum += 1
+                elif len(datarows):
+                    print(f'\r{dep}-{arr} generated!               ')
                 else:
-                    print(f'\r{dep}-{arr} collected!               ') 
+                    print(f'\r{dep}-{arr} WARN: no data!           ')
+                    self.__warn += 1
+                    continue
                 yield datarows
 
         if with_output:
-            if self.output_new_ignorance(self.ignore_threshold, ignoreNew):
-                print('Ignorance set updated, ', end = '')
-            print(filesum, 'routes collected in', path.name) if filesum > 1 \
-                else print(filesum, 'route collected in', path.name)
-        if self.__warn:
-            print('Total warning(s):', self.__warn)
+            if len(__ignores) > 0:
+                with open(f'IgnoredOrError_{self.ignore_threshold}.txt', 'a') as updates:
+                    updates.write(str(__ignores) + '\n')
+                    print('Ignorance set updated, ', end = '')
+            print(filesum, 'routes collected in', path.name) if filesum > 1 else \
+                print(filesum, 'route collected in', path.name)
+        print('Total warnings:', self.__warn) if self.__warn > 1 else \
+            print('Total warning:', self.__warn) if self.__warn else print()
+        self.__warn = 0
 
 
 if __name__ == "__main__":
@@ -492,11 +474,11 @@ if __name__ == "__main__":
               'CTU','CKG','KMG','JHG',
               'URC','XIY','LHW','LXA',
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
-    
+
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
     ignore_routes = {('BJS', 'LXA'), ('DLC', 'XIY')}
-    
+
     # 代理: 字符串 - 代理网址API / False - 禁用 / 不填 - 使用ProxyPool
     proxyurl = None
 
@@ -506,5 +488,3 @@ if __name__ == "__main__":
     crawler = CtripCrawler(cities, date(2022,2,17), 30, 0, ignore_routes, ignore_threshold, True, proxyurl)
     for data in crawler.run():
         pass
-    else:
-        print(' - - - COMPLETE AND EXIT - - - ')
