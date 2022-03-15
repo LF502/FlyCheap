@@ -542,14 +542,14 @@ class CivilAviation:
             return self.get_airfare(arg[0], arg[1])
         elif len(args) == 2:
             arr, dep = (arg.upper() for arg in args)
-            if arr == 'BJS':
-                arr = 'PEK' 
-            if dep == 'BJS':
-                dep = 'PEK' 
             if not dep.isupper():
                 dep = self.to_code(self.from_name(dep), True)
             if not arr.isupper():
                 arr = self.to_code(self.from_name(arr), True)
+            if arr == 'BJS':
+                arr = 'PEK' 
+            if dep == 'BJS':
+                dep = 'PEK' 
             if (dep, arr) in self.__airfare.keys():
                 return self.__airfare.get((dep, arr))
             else:
