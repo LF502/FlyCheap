@@ -355,6 +355,7 @@ class CtripCrawler():
         '''
         filesum = 0
         __ignores = set()
+        limits = self.ignore_threshold if self.ignore_threshold else 1
 
         '''Initialize running parameters'''
         path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
@@ -395,7 +396,7 @@ class CtripCrawler():
                     data_diff = len(datarows)
                     datarows.extend(self.collector(collectDate, dep, arr))
                     data_diff = len(datarows) - data_diff
-                    if data_diff >= self.ignore_threshold:
+                    if data_diff >= limits:
                         break
                     elif i != 0 and data_diff > 0:
                         break
@@ -407,7 +408,7 @@ class CtripCrawler():
                         print(f'\r{dep}-{arr} has {data_diff} flight(s), ignored. ')
                         __ignores.add((dep, arr))
                         break
-                    elif data_diff < self.ignore_threshold:
+                    elif data_diff < limits:
                         print(f' WARN: few data in {dep}-{arr} ', end = collectDate.isoformat())
                         self.__warn += 1
 
@@ -416,7 +417,7 @@ class CtripCrawler():
                     for j in range(3):
                         data_diff = len(datarows)
                         datarows.extend(self.collector(collectDate, arr, dep))
-                        if data_diff >= self.ignore_threshold:
+                        if data_diff >= limits:
                             break
                         elif i != 0 and data_diff > 0:
                             break
@@ -428,7 +429,7 @@ class CtripCrawler():
                             print(f'\r{arr}-{dep} has {data_diff} flight(s), ignored. ')
                             __ignores.add((arr, dep))
                             break
-                        elif data_diff < self.ignore_threshold:
+                        elif data_diff < limits:
                             print(f' WARN: few data in {arr}-{dep} ', end = collectDate.isoformat())
                             self.__warn += 1
 
