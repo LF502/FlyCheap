@@ -198,6 +198,80 @@ class CivilAviation:
             '青岛航空', '长安航', '桂林航', '奥凯航空', '春秋航空', '中国联合航空', 
             '祥鹏航空'
         }
+        
+        self.__greatcircle = {
+            ('BJS', 'HRB'): 553, ('BJS', 'DLC'): 245, ('BJS', 'SHA'): 575, 
+            ('BJS', 'NKG'): 504, ('BJS', 'HGH'): 613, ('BJS', 'WUX'): 541, 
+            ('BJS', 'FOC'): 853, ('BJS', 'XMN'): 924, ('BJS', 'JJN'): 912, 
+            ('BJS', 'CTU'): 828, ('BJS', 'CKG'): 778, ('BJS', 'XIY'): 492, 
+            ('BJS', 'LHW'): 638, ('BJS', 'WUH'): 558, ('BJS', 'SWA'): 980, 
+            ('HRB', 'TSN'): 555, ('HRB', 'TAO'): 621, ('HRB', 'CGO'): 876, 
+            ('HRB', 'SHA'): 895, ('HRB', 'NKG'): 901, ('HRB', 'HGH'): 963, 
+            ('TSN', 'SHA'): 514, ('TSN', 'HGH'): 554, ('TSN', 'FOC'): 798, 
+            ('TSN', 'XMN'): 874, ('TSN', 'CTU'): 835, ('TSN', 'CKG'): 773, 
+            ('TSN', 'XIY'): 500, ('TSN', 'WUH'): 523, ('TSN', 'CAN'): 964, 
+            ('DLC', 'TAO'): 171, ('DLC', 'CGO'): 457, ('DLC', 'SHA'): 466, 
+            ('DLC', 'NKG'): 452, ('DLC', 'HGH'): 526, ('DLC', 'FOC'): 786, 
+            ('DLC', 'XMN'): 881, ('DLC', 'CKG'): 922, ('DLC', 'WUH'): 609, 
+            ('TAO', 'CGO'): 337, ('TAO', 'SHA'): 307, ('TAO', 'NKG'): 281, 
+            ('TAO', 'HGH'): 362, ('TAO', 'XMN'): 711, ('TAO', 'CTU'): 891, 
+            ('TAO', 'CKG'): 795, ('TAO', 'XIY'): 580, ('TAO', 'LHW'): 811, 
+            ('TAO', 'WUH'): 451, ('TAO', 'CAN'): 853, ('TAO', 'SZX'): 884, 
+            ('CGO', 'SHA'): 428, ('CGO', 'HGH'): 422, ('CGO', 'FOC'): 596, 
+            ('CGO', 'XMN'): 637, ('CGO', 'JJN'): 632, ('CGO', 'CTU'): 554, 
+            ('CGO', 'CKG'): 466, ('CGO', 'KMG'): 800, ('CGO', 'LHW'): 514, 
+            ('CGO', 'CAN'): 666, ('CGO', 'SZX'): 711, ('CGO', 'HAK'): 891, 
+            ('CGO', 'SYX'): 999, ('SHA', 'FOC'): 327, ('SHA', 'XMN'): 433, 
+            ('SHA', 'JJN'): 410, ('SHA', 'CTU'): 897, ('SHA', 'CKG'): 767, 
+            ('SHA', 'XIY'): 665, ('SHA', 'LHW'): 939, ('SHA', 'WUH'): 368, 
+            ('SHA', 'CAN'): 634, ('SHA', 'ZHA'): 840, ('SHA', 'SZX'): 651, 
+            ('SHA', 'SWA'): 525, ('SHA', 'HAK'): 894, ('NKG', 'FOC'): 350, 
+            ('NKG', 'XMN'): 433, ('NKG', 'JJN'): 416, ('NKG', 'CTU'): 770, 
+            ('NKG', 'CKG'): 643, ('NKG', 'KMG'): 930, ('NKG', 'XIY'): 535, 
+            ('NKG', 'LHW'): 810, ('NKG', 'CAN'): 581, ('NKG', 'SZX'): 608, 
+            ('NKG', 'HAK'): 839, ('NKG', 'SYX'): 954, ('HGH', 'CTU'): 855, 
+            ('HGH', 'CKG'): 719, ('HGH', 'KMG'): 980, ('HGH', 'XIY'): 645, 
+            ('HGH', 'LHW'): 923, ('HGH', 'CAN'): 560, ('HGH', 'SZX'): 577, 
+            ('HGH', 'HAK'): 820, ('HGH', 'SYX'): 934, ('CZX', 'CTU'): 817, 
+            ('CZX', 'CAN'): 615, ('CZX', 'SZX'): 640, ('WUX', 'CTU'): 850, 
+            ('WUX', 'CKG'): 721, ('WUX', 'CAN'): 616, ('WUX', 'SZX'): 637, 
+            ('FOC', 'CTU'): 877, ('FOC', 'CKG'): 728, ('FOC', 'KMG'): 908, 
+            ('FOC', 'XIY'): 762, ('FOC', 'WUH'): 409, ('FOC', 'CAN'): 379, 
+            ('XMN', 'CTU'): 837, ('XMN', 'CKG'): 688, ('XMN', 'KMG'): 829, 
+            ('XMN', 'XIY'): 769, ('XMN', 'WUH'): 427, ('XMN', 'CAN'): 274, 
+            ('XMN', 'HAK'): 508, ('JJN', 'CTU'): 852, ('JJN', 'CKG'): 703, 
+            ('JJN', 'KMG'): 853, ('JJN', 'CAN'): 302, ('CTU', 'KMG'): 332, 
+            ('CTU', 'LHW'): 356, ('CTU', 'LXA'): 684, ('CTU', 'WUH'): 531, 
+            ('CTU', 'CAN'): 660, ('CTU', 'SZX'): 711, ('CTU', 'HAK'): 728, 
+            ('CTU', 'SYX'): 793, ('CKG', 'KMG'): 339, ('CKG', 'LXA'): 823, 
+            ('CKG', 'WUH'): 399, ('CKG', 'CAN'): 521, ('CKG', 'SZX'): 574, 
+            ('CKG', 'SWA'): 645, ('CKG', 'HAK'): 621, ('CKG', 'SYX'): 700, 
+            ('KMG', 'JHG'): 222, ('KMG', 'XIY'): 636, ('KMG', 'LHW'): 684, 
+            ('KMG', 'LXA'): 690, ('KMG', 'WUH'): 688, ('KMG', 'CAN'): 577, 
+            ('KMG', 'SZX'): 616, ('KMG', 'SWA'): 749, ('KMG', 'HAK'): 519, 
+            ('KMG', 'SYX'): 544, ('URC', 'LHW'): 862, ('XIY', 'LXA'): 960, 
+            ('XIY', 'CAN'): 703, ('XIY', 'SZX'): 755, ('XIY', 'HAK'): 873, 
+            ('XIY', 'SYX'): 966, ('LHW', 'CAN'): 933, ('LHW', 'SZX'): 986, 
+            ('WUH', 'CAN'): 444, ('WUH', 'SZX'): 487, ('WUH', 'HAK'): 680, 
+            ('WUH', 'SYX'): 791, ('CAN', 'ZHA'): 210, ('CAN', 'HAK'): 261, 
+            ('CAN', 'SYX'): 375, ('SZX', 'HAK'): 248, ('SZX', 'SYX'): 359, 
+            ('BJS', 'KMG'): 1117, ('BJS', 'URC'): 1311, ('BJS', 'CAN'): 1002, 
+            ('BJS', 'SZX'): 1043, ('BJS', 'HAK'): 1235, ('BJS', 'SYX'): 1344, 
+            ('HRB', 'FOC'): 1222, ('HRB', 'XMN'): 1323, ('HRB', 'CTU'): 1380, 
+            ('HRB', 'CKG'): 1328, ('HRB', 'KMG'): 1667, ('HRB', 'XIY'): 1045, 
+            ('HRB', 'WUH'): 1054, ('HRB', 'CAN'): 1474, ('HRB', 'SZX'): 1506, 
+            ('HRB', 'HAK'): 1726, ('HRB', 'SYX'): 1839, ('TSN', 'KMG'): 1112, 
+            ('TSN', 'URC'): 1369, ('TSN', 'SZX'): 1003, ('TSN', 'HAK'): 1203, 
+            ('DLC', 'CTU'): 1002, ('DLC', 'KMG'): 1256, ('DLC', 'CAN'): 1023, 
+            ('DLC', 'SZX'): 1055, ('DLC', 'HAK'): 1276, ('TAO', 'KMG'): 1119, 
+            ('TAO', 'HAK'): 1108, ('TAO', 'SYX'): 1222, ('CGO', 'URC'): 1344, 
+            ('SHA', 'KMG'): 1040, ('SHA', 'JHG'): 1234, ('SHA', 'URC'): 1770, 
+            ('SHA', 'SYX'): 1008, ('NKG', 'URC'): 1647, ('HGH', 'JHG'): 1169, 
+            ('HGH', 'URC'): 1766, ('WUX', 'KMG'): 1000, ('FOC', 'LHW'): 1038, 
+            ('XMN', 'URC'): 1897, ('CTU', 'URC'): 1119, ('CKG', 'URC'): 1249, 
+            ('KMG', 'URC'): 1357, ('URC', 'XIY'): 1138, ('URC', 'WUH'): 1492, 
+            ('URC', 'CAN'): 1770, ('URC', 'SZX'): 1823, ('URC', 'HAK'): 1841
+            }
 
         self.__airfare = {
             ('PEK', 'CAN'): 3060, ('PEK', 'CKG'): 2170, ('PEK', 'CTU'): 2230, 
@@ -541,11 +615,7 @@ class CivilAviation:
             arg = arg.upper().split('-', 1)
             return self.get_airfare(arg[0], arg[1])
         elif len(args) == 2:
-            arr, dep = (arg.upper() for arg in args)
-            if not dep.isupper():
-                dep = self.to_code(self.from_name(dep), True)
-            if not arr.isupper():
-                arr = self.to_code(self.from_name(arr), True)
+            arr, dep = (self.to_code(arg.upper(), True) for arg in args)
             if arr == 'BJS':
                 arr = 'PEK' 
             if dep == 'BJS':
@@ -556,6 +626,26 @@ class CivilAviation:
                 return self.__airfare.get((arr, dep), 0)
         else:
             return None
+    
+    def get_greatcircle(self, *args: str) -> int:
+        '''Get route's great circle distance in nautical miles'''
+        if len(args) == 1:
+            arg = args[0]
+            if not isinstance(arg, str):
+                return 0
+            arg = arg.upper().split('-', 1)
+            return self.get_greatcircle(arg[0], arg[1])
+        elif len(args) == 2:
+            arr, dep = (self.to_code(arg.upper()) for arg in args)
+            if (dep, arr) in self.__greatcircle.keys():
+                return self.__greatcircle.get((dep, arr))
+            else:
+                return self.__greatcircle.get((arr, dep), 0)
+        else:
+            sum = 0
+            for idx in range(len(args) - 1):
+                sum += self.get_greatcircle(args[idx], args[idx + 1])
+            return sum
     
     @staticmethod
     def is_multiairport(__str: str) -> bool:
@@ -588,8 +678,12 @@ class CivilAviation:
         '''Get city code from given name
         
         `True`: For multi-airport cities, get airport code if given airport name'''
-        return self.__airportCode.get(__str, None) if __multi else \
-            self.__airportCode.get(self.from_name(__str), None)
+        if __str.upper().isupper():
+            map = {'PEK': 'BJS', 'PKX': 'BJS', 'TFU': 'CTU', 'PVG': 'SHA', }
+            return map.get(__str.upper(), __str.upper())
+        else:
+            return self.__airportCode.get(__str, None) if __multi else \
+                self.__airportCode.get(self.from_name(__str), None)
     
     @property
     def skipped_routes(self):
