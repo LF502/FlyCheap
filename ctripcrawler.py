@@ -1,4 +1,5 @@
 from datetime import datetime, date, time
+from time import sleep
 from requests import get, post
 from json import dumps, loads
 from random import random
@@ -197,15 +198,17 @@ class CtripCrawler():
     @property
     def proxypool(self) -> dict | None:
         '''Get a random proxy from Proxy Pool'''
-        try:
-            with get('http://127.0.0.1:5555/random') as proxy:
-                proxy = {"http": "http://" + proxy.text.strip()}
-        except:
-            proxy = None
-            print(' WARN: no proxy', end='')
-            time.sleep((round(3 * random(), 2)))
-        finally:
-            return proxy
+        for _ in range(3):
+            try:
+                with get('http://127.0.0.1:5555/random', timeout = 3) as proxy:
+                    proxy = proxy.text.strip()
+                    if len(proxy):
+                        return {"http": "http://" + proxy}
+            except:
+                continue
+        else:
+            print(' WARN: no proxy', end = '')
+            return sleep(3 * random())
 
     @property
     def proxy(self) -> dict:
