@@ -1,9 +1,9 @@
-from types import NoneType
+from typing import Literal
 import pandas
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, differential
 from openpyxl.formatting.rule import Rule
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zipfile import ZipFile
 from pathlib import Path
 from civilaviation import CivilAviation
@@ -43,16 +43,27 @@ class Rebuilder():
     
     Parameters
     -----
-    root: `Path`, path of collection. 
+    - root: `Path`, path of collection. 
     
-    This should be the same for a class unless their data 
-    are continuous or related.
+        This should be the same for a class unless their data 
+        are continuous or related.
     
-    day_limit: `int`, limit of processing days.
-            default: `0`, no limits
+    - day_limit: `int`, limit of processing days.
     
+        default: `0`, no limits
+    
+    - starting_date: `date` | `tuple` | `int`(ordinal), the first processing date
+    
+        default: `0`, process all
+        
     '''
-    def __init__(self, root: Path | str = Path(), day_limit: int = 0) -> None:
+    set_hyperlink = Font(u = "single", color = "0070C0")
+    set_align = Alignment("center", "center")
+    set_bold = Font(bold = "b")
+    index_name = '索引-INDEX'
+    
+    def __init__(self, root: Path | str = Path(), 
+                 starting_date: date | tuple | int = 0, day_limit: int = 0) -> None:
         
         self.__airData = CivilAviation()
         self.__merge = pandas.DataFrame()
@@ -82,15 +93,19 @@ class Rebuilder():
             'mid_price_rate': '折扣中位', 'avg_price_rate': '折扣平均', 
             'mid_ratio_price': '系数中位', 'avg_ratio_price': '系数平均', 
         }
-        
-        self.__day_limit = day_limit
+        if isinstance(starting_date, date):
+            starting_date = starting_date.toordinal()
+        elif isinstance(starting_date, tuple) or isinstance(starting_date, list):
+            starting_date = date(*starting_date).toordinal()
+        self.__starting_date = starting_date if isinstance(starting_date, int) else 0
+        self.__day_limit = day_limit if isinstance(day_limit, int) else 0
         self.__root = Path(root)
         
         self.__files: list[Path] = []
         self.__unlink: list[Path] = []
         
         self.__warn = 0
-    
+        
     '''EXCEL FORMAT'''
     #WORKBOOK           -> wb / file
     
@@ -240,6 +255,8 @@ class Rebuilder():
         if len(data) > 0:
             if self.__day_limit:
                 data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
+            if self.__starting_date:
+                data.drop(data[data['date_flight'] < self.__starting_date].index, inplace = True)
             self.__merge = pandas.concat([data, self.__merge]) if len(self.__merge) else data
             return data
         else:
@@ -261,32 +278,66 @@ class Rebuilder():
         self.__files.clear()
         self.__unlink.clear()
         if clear_rebuilt:
-            self.__merge.clear()
+            del self.__merge
             self.__merge = pandas.DataFrame()
-            self.__preprocess.clear()
+            del self.__preprocess
             self.__preprocess = pandas.DataFrame()
         warn, self.__warn = self.__warn, 0 
         return warn
     
     @staticmethod
-    def __diffrule(index, type: str, op: str = None, formula = ()) -> Rule:
+    def __diffrule(index: int | tuple[str, str], type: str, op: str = None, formula = ()) -> Rule:
+        '''index == 0 -> bold, even index -> red, odd index -> yellow, 
+        tuple[str, str] index -> color(font, patternfill)'''
         exp = {
             ">": "greaterThan", ">=": "greaterThanOrEqual", "<": "lessThan", 
             "<=": "lessThanOrEqual", "=": "equal", "==": "equal", "!=": "notEqual"}
-        if not index:
-            return Rule(
-                type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
-                dxf = differential.DifferentialStyle(font = Font(bold = "b")))
+        parameters = {}
+        if index == 0:
+            parameters['font'] = Font(bold = "b")
+        elif isinstance(index, tuple) or isinstance(index, list):
+            parameters['font'] = Font(color = index[0])
+            parameters['fill'] = PatternFill(bgColor = index[1], fill_type = "solid")
         elif index % 2:
-            return Rule(
-                type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
-                dxf = differential.DifferentialStyle(font = Font(color = "CC6600"), 
-                fill = PatternFill(bgColor = "FFEBCD", fill_type = "solid")))
+            parameters['font'] = Font(color = "CC6600")
+            parameters['fill'] = PatternFill(bgColor = "FFEBCD", fill_type = "solid")
         else:
-            return Rule(
-                type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
-                dxf = differential.DifferentialStyle(font = Font(color = "CC0000"), 
-                fill = PatternFill(bgColor = "FFCCCC", fill_type = "solid")))
+            parameters['font'] = Font(color = "CC0000")
+            parameters['fill'] = PatternFill(bgColor = "FFCCCC", fill_type = "solid")
+        return Rule(type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
+                    dxf = differential.DifferentialStyle(**parameters))
+    
+    def indexbook(self, *routes: str):
+        '''Return a workbook with route index aka menu'''
+        wb = Workbook()
+        ws = wb.active
+        ws.title = self.index_name
+        ws.append(('出发', '到达'))
+        ws.auto_filter.ref, ws.freeze_panes = 'A1:A1', 'B2'
+        cities, row = {}, 1
+        for route in routes if len(routes) else self.__merge['route'].unique():
+            dep, arr = route.split('-', 1)
+            if cities.get(dep):
+                cities[dep].append(arr)
+            else:
+                cities[dep] = [arr]
+        for city in cities.keys():
+            cities[city].sort(key = lambda x: len(cities[x]), reverse = True)
+        for dep in sorted(cities.keys(), key = lambda x: len(cities[x]), reverse = True):
+            col = 1
+            row += 1
+            cell = ws.cell(row, col, dep)
+            for arr in cities[dep]:
+                col += 1
+                cell = ws.cell(row, col, arr)
+                cell.hyperlink = f"#'{dep}-{arr}'!A1"
+                cell.font = self.set_hyperlink
+                cell.alignment = self.set_align
+        for idx in range(1, 3):
+            ws.cell(1, idx).font = self.set_bold
+            ws.cell(1, idx).alignment = self.set_align
+        return wb
+    
     
     def merge(self) -> pandas.DataFrame:
         total = len(self.__files)
@@ -304,11 +355,14 @@ class Rebuilder():
                 print(f"\rmerging >> {percent:03d}", end = '%')
             date_coll = date.fromisoformat(file.parent.name).toordinal()
             data = pandas.read_excel(file, names = header).assign(date_coll = date_coll)    #10
+            
+            data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
+            if self.__starting_date:
+                data.drop(data[data['date_flight'] < self.__starting_date].index, inplace = True)
+            data['day_adv'] = data['date_flight'] - date_coll                               #11
             if self.__day_limit:
                 data.drop(data[data['day_adv'] > self.__day_limit].index, inplace = True)
             
-            data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
-            data['day_adv'] = data['date_flight'] - date_coll                               #11
             data['hour_dep'] = data['time_dep'].map(lambda x: x.hour if x.hour else 24)     #12
             
             if self.__airData.is_multiairport(file.name[:3]) or \
@@ -322,63 +376,6 @@ class Rebuilder():
         print()
         return pandas.concat(frame)
     
-    
-    def check(self, data: pandas.DataFrame = None, path: Path = Path("check.xlsx")):
-        if not isinstance(data, pandas.DataFrame):
-            if len(self.__merge):
-                data = self.__merge.copy(False)
-            else:
-                print("ERROR: No data frame is loaded!")
-                return None
-        
-        if 'density_day' not in data.keys():
-            data['density_day'] = data.groupby(["date_flight", \
-                "route", "date_coll"])['date_flight'].transform("count")
-        
-        density = data.groupby(['route'])
-        errors = {"密度过低": {}}
-        error = errors['密度过低']
-        total, idct, percent = len(data), 0, -1
-        for (route, ordinal), routes in data.groupby(['route', 'date_flight']):
-            idct += len(routes)
-            if percent != int(idct / total * 100):
-                percent = int(idct / total * 100)
-                print(f"\r check >> {percent:03d}", end = '%')
-            if density.get_group(route)['density_day'].mean() <= 5:
-                continue
-            day = date.fromordinal(ordinal)
-            top = routes['density_day'].quantile(q = 0.8)
-            bottom = routes['density_day'].quantile(q = 0.2)
-            
-            diff = top - bottom
-            bottom -=  2 * diff
-            low = routes.loc[routes['density_day'] < bottom, :]
-            low = low.loc[low['day_adv'] > 3, :].get('date_coll')
-            if len(low):
-                error[(route, day)] = [len(low)] + \
-                    list(date.fromordinal(coll) for coll in low.unique())
-        
-        wb = Workbook()
-        ws = wb.active
-        ws.append(('异常', '航线', '日期', '异常总数', '收集日期'))
-        ws.column_dimensions['B'].width = 14
-        ws.auto_filter.ref, ws.freeze_panes = 'A1:C1', 'A2'
-        row = 1
-        for idx in range(1, 6):
-            ws.cell(row ,idx).font = Font(bold = "b")
-            ws.alignment = Alignment("center", "center")
-        for key in errors.keys():
-            for error in errors[key].keys():
-                ws.append([key, *error] + errors[key][error])
-                row += 1
-                for idx in range(1, len(errors[key][error])):
-                    ws.cell(row, 4 + idx).number_format = "mm\"-\"dd"
-        for idx in range(2, ws.max_row):
-            ws.cell(idx ,3).number_format = "mm\"-\"dd"
-        
-        wb.save(path)
-        wb.close
-        
     
     def dates(self, path: Path | str = Path(), file: str = '') -> None:
         '''Date overview by date of collect and date of flight
@@ -416,37 +413,37 @@ class Rebuilder():
         '''Add index aka index'''
         wb_coll = Workbook()
         index_coll = wb_coll.active
-        index_coll.title = "索引-INDEX"
+        index_coll.title = self.index_name
         index_coll.column_dimensions['A'].width = 11
         index_coll.freeze_panes = 'E2'
         index_coll.append(["收集日期", "航班总数", "航线总数", "航班日数"] + total_flights)
         for idx in range(1, 5):
-            index_coll.cell(1, idx).font = Font(bold = "b")
-            index_coll.cell(1, idx).alignment = Alignment("center", "center")
+            index_coll.cell(1, idx).font = self.set_bold
+            index_coll.cell(1, idx).alignment = self.set_align
         for idx in range(5, index_coll.max_column + 1):
             cell = index_coll.cell(1, idx)
             cell.number_format = "mm\"-\"dd"
-            cell.alignment = Alignment("center", "center")
+            cell.alignment = self.set_align
             cell.hyperlink = f"{file_flight}#'{total_flights[idx - 5].strftime('%m-%d')}'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
-            cell.alignment = Alignment("center", "center")
+            cell.font = self.set_hyperlink
+            cell.alignment = self.set_align
         
         wb_flight = Workbook()
         index_flight = wb_flight.active
-        index_flight.title = "索引-INDEX"
+        index_flight.title = self.index_name
         index_flight.column_dimensions['A'].width = 11
         index_flight.freeze_panes = 'E2'
         index_flight.append(["航班日期", "航班总数", "航线总数", "收集日数"] + total_colls)
         for idx in range(1, 5):
-            index_flight.cell(1, idx).font = Font(bold = "b")
-            index_flight.cell(1, idx).alignment = Alignment("center", "center")
+            index_flight.cell(1, idx).font = self.set_bold
+            index_flight.cell(1, idx).alignment = self.set_align
         for idx in range(5, index_flight.max_column + 1):
             cell = index_flight.cell(1, idx)
             cell.number_format = "mm\"-\"dd"
-            cell.alignment = Alignment("center", "center")
+            cell.alignment = self.set_align
             cell.hyperlink = f"{file_coll}#'{total_colls[idx - 5].strftime('%m-%d')}'!C3"
-            cell.font = Font(u = "single", color = "0070C0")
-            cell.alignment = Alignment("center", "center")
+            cell.font = self.set_hyperlink
+            cell.alignment = self.set_align
         
         
         '''Append date of collect data'''
@@ -491,8 +488,8 @@ class Rebuilder():
             '''Format sheet'''
             for item in title.values():
                 ws.append(item)
-            ws.cell(1, 1).hyperlink = f"#'{'索引-INDEX'}'!A1"
-            ws.cell(1, 1).font = Font(u = "single", color = "0070C0")
+            ws.cell(1, 1).hyperlink = f"#'{self.index_name}'!A1"
+            ws.cell(1, 1).font = self.set_hyperlink
             for idx in range(4, ws.max_column + 1):
                 ws.cell(1, idx).number_format = "mm\"-\"dd"
             
@@ -516,7 +513,7 @@ class Rebuilder():
             index_coll.append(header + ratios)
             cell = index_coll.cell(index_coll.max_row, 1)
             cell.hyperlink = f"#'{ws.title}'!C3"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.font = self.set_hyperlink
         del sheets_coll
         
         
@@ -556,8 +553,8 @@ class Rebuilder():
             
             '''Format sheet'''
             ws.append(title)
-            ws.cell(1, 1).hyperlink = f"#'{'索引-INDEX'}'!A1"
-            ws.cell(1, 1).font = Font(u = "single", color = "0070C0")
+            ws.cell(1, 1).hyperlink = f"#'{self.index_name}'!A1"
+            ws.cell(1, 1).font = self.set_hyperlink
             for idx in range(2, ws.max_column + 1):
                 ws.cell(1, idx).number_format = "mm\"-\"dd"
             
@@ -581,7 +578,7 @@ class Rebuilder():
             index_flight.append(header + ratios)
             cell = index_flight.cell(index_flight.max_row, 1)
             cell.hyperlink = f"#'{ws.title}'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.font = self.set_hyperlink
         del sheets_flight
         
         
@@ -595,11 +592,11 @@ class Rebuilder():
             if percent != int(idct / total * 25 + 50):
                 percent = int(idct / total * 25 + 50)
                 print(f"\rmerging dates >> {percent:03d}", end = '%')
-            if ws.title == '索引-INDEX':
+            if ws.title == self.index_name:
                 continue
             cell = ws.cell(3, 3, "返回索引")
-            cell.hyperlink = f"#'{'索引-INDEX'}'!A1"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
             med_string = f"B4:B{ws.max_row - 1}"
             med_rule = self.__diffrule(0, 'cellIs', '>', [f"$B${ws.max_row}"])
             ws.conditional_formatting.add(med_string, med_rule)
@@ -620,7 +617,7 @@ class Rebuilder():
             if percent != int(idct / total * 25 + 75):
                 percent = int(idct / total * 25 + 75)
                 print(f"\rmerging dates >> {percent:03d}", end = '%')
-            if ws.title == '索引-INDEX':
+            if ws.title == self.index_name:
                 continue
             med_string = f"B4:B{ws.max_row - 1}"
             med_rule = self.__diffrule(0, 'cellIs', '>', [f"$B${ws.max_row}"])
@@ -744,57 +741,28 @@ class Rebuilder():
                 footers[name]['coll'].append(_group['price_rate'].mean())
             footers[name]['coll'].reverse()
         
-        '''Add index aka menu and overviews'''
-        wb = Workbook()
-        ws = wb.create_sheet('索引-INDEX')
-        ws.append(('出发', '到达'))
-        ws.auto_filter.ref, ws.freeze_panes = 'A1:A1', 'B2'
-        cities, cities_sort = {}, []
-        for route in data['route'].unique():
-            dep, arr = route.split('-', 1)
-            if cities.get(dep):
-                cities[dep].append(arr)
-            else:
-                cities[dep] = [arr]
-        for city in cities.keys():
-            cities[city].sort(key = lambda x: len(cities[x]), reverse = True)
-            cities_sort.append(city)
-        cities_sort.sort(key = lambda x: len(cities[x]), reverse = True)
-        for dep in cities_sort:
-            row, col = cities_sort.index(dep) + 2, 1
-            cell = ws.cell(row, col, dep)
-            for arr in cities[dep]:
-                col += 1
-                cell = ws.cell(row, col, arr)
-                cell.hyperlink = f"#'{dep}-{arr}'!A1"
-                cell.font = Font(u = "single", color = "0070C0")
-                cell.alignment = Alignment("center", "center")
-        for idx in range(1, 3):
-            ws.cell(1, idx).font = Font(bold = "b")
-            ws.cell(1, idx).alignment = Alignment("center", "center")
-        
+        wb = self.indexbook()
         for sheet in ('时刻密度', '时刻竞争', '时刻系数'):
             ws = wb.create_sheet(sheet)
             ws.append(title_hour)
             for idx in range(1, len(title_hour) + 1):
-                ws.cell(1, idx).font = Font(bold = "b")
-                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = self.set_bold
+                ws.cell(1, idx).alignment = self.set_align
         for sheet in ('单日平均折扣', '单日标准差'):
             ws = wb.create_sheet(sheet)
             ws.append(title_date)
             for idx in range(1, len(title_date) + 1):
                 if idx > len(title):
                     ws.cell(1, idx).number_format = "mm\"-\"dd"
-                ws.cell(1, idx).font = Font(bold = "b")
-                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = self.set_bold
+                ws.cell(1, idx).alignment = self.set_align
         for sheet in ('提前平均折扣', '提前标准差'):
             ws = wb.create_sheet(sheet)
             ws.append(title_adv["overview"])
             for idx in range(1, len(title_adv["overview"]) + 1):
-                ws.cell(1, idx).font = Font(bold = "b")
-                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = self.set_bold
+                ws.cell(1, idx).alignment = self.set_align
         
-        wb.remove(wb.active)
         for name in headers.keys():
             wb['时刻密度'].append(headers[name] + route_density[name])
             wb['时刻竞争'].append(headers[name] + route_comp[name])
@@ -804,13 +772,13 @@ class Rebuilder():
             wb['单日平均折扣'].append(headers[name] + route_date_mean[name])
             wb['单日标准差'].append(headers[name] + route_date_std[name])
         for ws in wb:
-            if ws.title == '索引-INDEX':
+            if ws.title == self.index_name:
                 continue
             ws.freeze_panes = 'L2'
             ws.column_dimensions['A'].width = 14
             for idx in range(2, ws.max_row + 1):
                 ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!B1"
-                ws.cell(idx, 1).font = Font(u = "single", color = "0070C0")
+                ws.cell(idx, 1).font = self.set_hyperlink
                 ws.cell(idx, 7).number_format = "0.00%"
                 ws.cell(idx, 8).number_format = "0.00%"
         
@@ -826,14 +794,14 @@ class Rebuilder():
             ws.append(['日期\提前天', '星期', '折扣平均', '折扣中位'] + title_adv[name])
             for idx in range(2, 5):
                 cell = ws.cell(1, idx)
-                cell.alignment = Alignment("center", "center")
-                cell.font = Font(bold = "b")
+                cell.alignment = self.set_align
+                cell.font = self.set_bold
             for ordinal in route_date[name]:
                 day = date.fromordinal(ordinal)
                 ws.append([day, day.isoweekday()] + \
                     footers[name]['date'][ordinal] + route_date[name][ordinal])
-            ws.cell(1, 1).hyperlink = "#'索引-INDEX'!A1"
-            ws.cell(1, 1).font = Font(u = "single", color = "0070C0")
+            ws.cell(1, 1).hyperlink = f"#'{self.index_name}'!A1"
+            ws.cell(1, 1).font = self.set_hyperlink
             ws.freeze_panes = 'E2'
             ws.column_dimensions['A'].width = 12
             ws.column_dimensions["B"].width = 6
@@ -856,13 +824,13 @@ class Rebuilder():
             
             cell, (dep, arr) = ws.cell(ws.max_row, 1), name.split('-', 1)
             cell.hyperlink = f"#'({dep}-{arr})'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.font = self.set_hyperlink
             cell = ws.cell(ws.max_row, 2)
             cell.hyperlink = f"#'{arr}-{dep}'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.font = self.set_hyperlink
             cell = ws.cell(ws.max_row, 3)
-            cell.hyperlink = f"#'索引-INDEX'!A1"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
             
             '''Append data by date of collect'''
             ws = wb.create_sheet(f"({name})")
@@ -870,18 +838,18 @@ class Rebuilder():
                 list(date.fromordinal(ordinal) for ordinal in title_coll[name]))
             for idx in range(2, 5):
                 cell = ws.cell(1, idx)
-                cell.alignment = Alignment("center", "center")
-                cell.font = Font(bold = "b")
+                cell.alignment = self.set_align
+                cell.font = self.set_bold
             for idx in range(5, ws.max_column + 1):
                 cell = ws.cell(1, idx)
                 cell.number_format = "mm\"-\"dd"
-                cell.alignment = Alignment("center", "center")
+                cell.alignment = self.set_align
             for ordinal in route_coll[name]:
                 day = date.fromordinal(ordinal)
                 ws.append([day, day.isoweekday()] + \
                     footers[name]['date'][ordinal] + route_coll[name][ordinal])
-            ws.cell(1, 1).hyperlink = "#'索引-INDEX'!A1"
-            ws.cell(1, 1).font = Font(u = "single", color = "0070C0")
+            ws.cell(1, 1).hyperlink = f"#'{self.index_name}'!A1"
+            ws.cell(1, 1).font = self.set_hyperlink
             ws.freeze_panes = 'E2'
             ws.column_dimensions['A'].width = 12
             ws.column_dimensions["B"].width = 6
@@ -904,20 +872,20 @@ class Rebuilder():
             
             cell, (dep, arr) = ws.cell(ws.max_row, 1), name.split('-', 1)
             cell.hyperlink = f"#'{dep}-{arr}'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.font = self.set_hyperlink
             cell = ws.cell(ws.max_row, 2)
             cell.hyperlink = f"#'({arr}-{dep})'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.font = self.set_hyperlink
             cell = ws.cell(ws.max_row, 3)
-            cell.hyperlink = f"#'索引-INDEX'!A1"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
             
         '''Output merged data'''
         if file == '' or file is None:
             file = f"overview_{self.__root.name}_routes.xlsx"
         elif not file.endswith(".xlsx"):
             file += ".xlsx"
-        if isinstance(path, str):
+        if not isinstance(path, Path):
             path = Path(path)
         path.mkdir(parents = True, exist_ok = True)
         if (path / Path(file)).exists():
@@ -957,7 +925,6 @@ class Rebuilder():
         
         idct, percent = 0, -1
         for name, group in overview:
-            
             headers[name] = [
                 name, len(group), group['date_flight'].nunique(), group['date_coll'].nunique(), 
                 group['route'].nunique(), group['type'].nunique(), group['ratio_daily'].mean(), 
@@ -1021,69 +988,38 @@ class Rebuilder():
                     routes[route] = {name: airlines[name][route].copy()}
         
         '''Add index aka menu and overviews'''
-        wb = Workbook()
-        ws = wb.create_sheet('索引-INDEX')
-        ws.append(('航空公司', '出发', '到达'))
-        ws.auto_filter.ref = 'A1:B1'
-        ws.freeze_panes = 'C2'
-        ws.column_dimensions['A'].width, idx = 13, 2
-        for airline in sorted(data['airline'].unique()):
-            cell = ws.cell(idx, 1, airline)
-            cell.hyperlink = f"#'{cell.value}'!A1"
-            cell.font = Font(u = "single", color = "0070C0")
-            cell.alignment = Alignment("center", "center")
-            idx += 1
-        cities, cities_sort = {}, []
-        for route in data['route'].unique():
-            dep_c, arr_c = route.split('-', 1)
-            if cities.get(dep_c):
-                cities[dep_c].append(arr_c)
-            else:
-                cities[dep_c] = [arr_c]
-        for city in cities.keys():
-            cities[city].sort(key = lambda x: len(cities[x]), reverse = True)
-            cities_sort.append(city)
-        cities_sort.sort(key = lambda x: len(cities[x]), reverse = True)
-        for dep_c in cities_sort:
-            row, col = cities_sort.index(dep_c) + 2, 2
-            cell = ws.cell(row, col, dep_c)
-            for arr_c in cities[dep_c]:
-                col += 1
-                cell = ws.cell(row, col, arr_c)
-                cell.hyperlink = f"#'{dep_c}-{arr_c}'!A1"
-                cell.font = Font(u = "single", color = "0070C0")
-                cell.alignment = Alignment("center", "center")
-        for idx in range(1, 4):
-            ws.cell(1, idx).font = Font(bold = "b")
-            ws.cell(1, idx).alignment = Alignment("center", "center")
+        wb = self.indexbook()
+        cell = ws.cell(1, 3, '航空公司')
+        cell.hyperlink = f"#'航线密度'!A1"
+        cell.font = self.set_hyperlink
+        cell.alignment = self.set_align
         
         for sheet in ('航线密度', '航线系数'):
             ws = wb.create_sheet(sheet)
             ws.append(title_route)
             for idx in range(1, len(title) + 1):
-                ws.cell(1, idx).font = Font(bold = "b")
-                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = self.set_bold
+                ws.cell(1, idx).alignment = self.set_align
             for idx in range(len(title) + 1, len(title_route) + 1):
                 cell = ws.cell(1, idx)
                 cell.hyperlink = f"#'{cell.value}'!A1"
-                cell.font = Font(u = "single", color = "0070C0")
-                cell.alignment = Alignment("center", "center")
+                cell.font = self.set_hyperlink
+                cell.alignment = self.set_align
                 ws.column_dimensions[cell.coordinate[:1]].width = 10
         
         for sheet in ('时刻密度', '时刻系数'):
             ws = wb.create_sheet(sheet)
             ws.append(title_hour)
             for idx in range(1, len(title_hour) + 1):
-                ws.cell(1, idx).font = Font(bold = "b")
-                ws.cell(1, idx).alignment = Alignment("center", "center")
+                ws.cell(1, idx).font = self.set_bold
+                ws.cell(1, idx).alignment = self.set_align
         
         ws = wb.create_sheet('机场计数')
         ws.append(title_dep)
         for idx in range(1, len(title_dep) + 1):
-            ws.cell(1, idx).font = Font(bold = "b")
-            ws.cell(1, idx).alignment = Alignment("center", "center")
+            ws.cell(1, idx).font = self.set_bold
+            ws.cell(1, idx).alignment = self.set_align
         
-        wb.remove(wb.active)
         for name in headers.keys():
             wb['航线密度'].append(headers[name] + route_density[name])
             wb['航线系数'].append(headers[name] + route_ratio[name])
@@ -1097,13 +1033,13 @@ class Rebuilder():
                     cell.number_format = "0.00%"
         
         for ws in wb:
-            if ws.title == '索引-INDEX':
+            if ws.title == self.index_name:
                 continue
             ws.freeze_panes = 'I2'
             ws.column_dimensions['A'].width = 13
             for idx in range(2, ws.max_row + 1):
                 ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!A1"
-                ws.cell(idx, 1).font = Font(u = "single", color = "0070C0")
+                ws.cell(idx, 1).font = self.set_hyperlink
                 ws.cell(idx, len(title)).number_format = "0.00%"
                 ws.cell(idx, len(title) - 1).number_format = "0.00%"
         
@@ -1116,20 +1052,20 @@ class Rebuilder():
             for route in airlines[airline].keys():
                 ws.append([route] + airlines[airline][route])
             for idx in range(2, ws.max_row + 1):
-                ws.cell(idx, 1).font = Font(u = "single", color = "0070C0")
+                ws.cell(idx, 1).font = self.set_hyperlink
                 ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!A1"
             for idx in range(2, 22):
-                ws.cell(1, idx).alignment = Alignment("center", "center")
-                ws.cell(1, idx).font = Font(bold = "b")
+                ws.cell(1, idx).alignment = self.set_align
+                ws.cell(1, idx).font = self.set_bold
             for cols in ws.iter_cols(2, ws.max_column, 2, ws.max_row):
                 for cell in cols:
                     cell.number_format = "0.00%"
             cell = ws.cell(ws.max_row + 1, 1, '返回索引')
-            cell.hyperlink = "#'索引-INDEX'!A1"
-            cell.font = Font(u = "single", color = "0070C0")
-            ws.cell(1, 1).hyperlink = "#'索引-INDEX'!A1"
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            ws.cell(1, 1).hyperlink = f"#'{self.index_name}'!A1"
             ws.cell(1, 1).font = Font(u = "single", color = "0070C0", bold = "b")
-            ws.cell(1, 1).alignment = Alignment("center", "center")
+            ws.cell(1, 1).alignment = self.set_align
         
         '''Route details'''
         for route in routes.keys():
@@ -1140,31 +1076,31 @@ class Rebuilder():
             for airline in routes[route].keys():
                 ws.append([airline] + routes[route][airline])
             for idx in range(2, ws.max_row + 1):
-                ws.cell(idx, 1).font = Font(u = "single", color = "0070C0")
+                ws.cell(idx, 1).font = self.set_hyperlink
                 ws.cell(idx, 1).hyperlink = f"#'{ws.cell(idx, 1).value}'!A1"
             for idx in range(2, 22):
-                ws.cell(1, idx).alignment = Alignment("center", "center")
-                ws.cell(1, idx).font = Font(bold = "b")
+                ws.cell(1, idx).alignment = self.set_align
+                ws.cell(1, idx).font = self.set_bold
             for cols in ws.iter_cols(2, ws.max_column, 2, ws.max_row):
                 for cell in cols:
                     cell.number_format = "0.00%"
             cell = ws.cell(ws.max_row + 1, 1, '返回索引')
-            cell.hyperlink = "#'索引-INDEX'!A1"
-            cell.font = Font(u = "single", color = "0070C0")
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
             cell = ws.cell(ws.max_row + 1, 1, '返程')
             route = route.split('-', 1)
             cell.hyperlink = f"#'{route[1]}-{route[0]}'!A2"
-            cell.font = Font(u = "single", color = "0070C0")
-            ws.cell(1, 1).hyperlink = "#'索引-INDEX'!A1"
+            cell.font = self.set_hyperlink
+            ws.cell(1, 1).hyperlink = f"#'{self.index_name}'!A1"
             ws.cell(1, 1).font = Font(u = "single", color = "0070C0", bold = "b")
-            ws.cell(1, 1).alignment = Alignment("center", "center")
+            ws.cell(1, 1).alignment = self.set_align
         
         '''Output merged data'''
         if file == '' or file is None:
             file = f"overview_{self.__root.name}_airlines.xlsx"
         elif not file.endswith(".xlsx"):
             file += ".xlsx"
-        if isinstance(path, str):
+        if not isinstance(path, Path):
             path = Path(path)
         path.mkdir(parents = True, exist_ok = True)
         if (path / Path(file)).exists():
@@ -1175,9 +1111,7 @@ class Rebuilder():
         wb.close()
     
     
-    def preprocess(
-        self, path: Path | str | None = None, scaler: bool = True, 
-        starting_date: date | tuple | int = 0) -> pandas.DataFrame:
+    def preprocess(self, path: Path | str | None = None, scaler: bool = True):
         '''
         Input
         -----
@@ -1189,10 +1123,6 @@ class Rebuilder():
         - scaler: `bool`, min-max scale
         
             default: `True`
-        
-        - starting_date: `date` | `tuple` | `int`(ordinal), start of processing date
-        
-            default: `0`, process all
         
         Output
         -----
@@ -1226,10 +1156,10 @@ class Rebuilder():
         if len(self.__preprocess):
             return self.__preprocess
         if (not len(self.__merge)) or path:
-            if isinstance(self.append_data(path), NoneType):
+            if self.append_data(path) is None:
                 print('ERROR: No data loaded or incorrect path!')
                 return None
-        data, output = self.__merge.copy(False), self.__preprocess
+        data = self.__merge.copy(False)
         rate_error = data.loc[data['price_rate'] == 0, :]
         if len(rate_error):
             data['airfare'] = rate_error[['dep', 'arr']].apply(self.__airData.get_airfare)
@@ -1250,15 +1180,11 @@ class Rebuilder():
         routes = data.drop_duplicates(['dep', 'arr', 'time', 'date_coll', 'date_flight']).dropna()
         if self.__day_limit:
             routes.drop(routes[routes['day_adv'] > self.__day_limit].index, inplace = True)
-        if isinstance(starting_date, date):
-            starting_date = starting_date.toordinal()
-        elif isinstance(starting_date, tuple) or isinstance(starting_date, list):
-            starting_date = date(*starting_date).toordinal()
-        if isinstance(starting_date, int):
-            routes.drop(routes[routes['date_flight'] < starting_date].index, inplace = True)
+        if self.__starting_date:
+            routes.drop(routes[routes['date_flight'] < self.__starting_date].index, inplace = True)
         routes = routes[['route', 'dep', 'arr', 'dens', 'time', 'day_adv', 'day_week', 'date_flight', \
             'date_coll', 'cheap', 'comp', 'min', 'mean', 'max']].reset_index()
-        
+        '''
         maps = {
             '_a': self.__airData.airports, 
             '_c': self.__airData.cityClass, 
@@ -1272,25 +1198,386 @@ class Rebuilder():
         
         output['dens'] = (routes['dens'] - routes['dens'].min()) / (routes['dens'].max() \
             - routes['dens'].min()) if scaler else routes['dens'].round(1)
-        output['adv'] = routes['day_adv'].apply(lambda x: 1 if x >= 45 else 0 \
-            if x <= 1 else (x - 1) / 44) if scaler else routes['day_adv']
-        
-        dow = routes['day_week'].map({'星期一': (1, 0, 0, 0, 0), 
+        '''
+        dows = {'星期一': (1, 0, 0, 0, 0), 
             '星期二': (0, 1, 0, 0, 0), '星期三': (0, 1, 0, 0, 0), 
             '星期四': (0, 1, 0, 0, 0), '星期五': (0, 0, 1, 0, 0), 
-            '星期六': (0, 0, 0, 1, 0), '星期日': (0, 0, 0, 0, 1)})
-        for key in range(5):
-            output[f'dow_{key}'] = list(seq[key] for seq in dow.values)
-        
+            '星期六': (0, 0, 0, 1, 0), '星期日': (0, 0, 0, 0, 1)}
+
         months = lambda x: date.fromordinal(x).month
-        output['month'] = (routes['date_flight'].map(months) - \
-            routes['date_coll'].map(months)).map(lambda x: 0 if x else 1)
-        output['time'] = routes['time']
-        output['comp'] = routes['comp'].apply(lambda x: 0 if x <= 1 else 1 \
-            if x >= 11 else (x - 1) / 10) if scaler else routes['comp']
-        output['cheap'] = routes['cheap'].apply(lambda x: 0 if x <= 0 else 1 \
-            if x >= 3 else x / 3).round(3) if scaler else routes['cheap']
-        for key in 'min', 'mean', 'max':
-            output[key] = routes[key].round(4)
         
-        return output
+        for route, group in routes.groupby(['route']):
+            output = pandas.DataFrame()
+            output['adv'] = group['day_adv'].apply(lambda x: 1 if x >= 45 else 0 \
+                if x <= 1 else (x - 1) / 44) if scaler else group['day_adv']
+            
+            dow = group['day_week'].map(dows)
+            for key in range(5):
+                output[f'dow_{key}'] = list(seq[key] for seq in dow.values)
+            
+            output['month'] = (group['date_flight'].map(months) - \
+                group['date_coll'].map(months)).map(lambda x: 0 if x else 1)
+            output['time'] = group['time']
+            output['comp'] = group['comp'].apply(lambda x: 0 if x <= 1 else 1 \
+                if x >= 11 else (x - 1) / 10) if scaler else group['comp']
+            output['cheap'] = group['cheap'].apply(lambda x: 0 if x <= 0 else 1 \
+                if x >= 3 else x / 3).round(3) if scaler else group['cheap']
+            for key in 'min', 'mean', 'max':
+                output[key] = group[key].round(4)
+            
+            yield route, output
+            del output
+    
+    
+    def corr_month(self, year: int = 0, month: int = 0, path: Path | str = Path(), file: str = ''):
+        ''''''
+        if not len(self.__merge):
+            self.__merge = self.merge()
+        data = self.__merge.copy()
+        
+        wb = self.indexbook()
+        rules = (
+            self.__diffrule(2, 'cellIs', '>', [0.9]),
+            self.__diffrule(1, 'cellIs', '>', [0.8]),
+            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '>', [0.5]),
+            self.__diffrule(2, 'cellIs', '<', [-0.9]), 
+            self.__diffrule(1, 'cellIs', '<', [-0.8]), 
+            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '<', [-0.5]))
+        percent, idct = -1, 0
+        total = len(data)
+        data['date_flight'] = data['date_flight'].map(date.fromordinal)
+        data['date_coll'] = data['date_coll'].map(date.fromordinal)
+        max_coll = data['date_coll'].max()
+        month = month if month else max_coll.month
+        year = year if year else max_coll.year
+        data['target'] = data['date_flight'].map(lambda x: 1 if x.month == month else 0)
+        max_coll = (datetime(year, month, 1) - timedelta(1)).date()
+        
+        for route, routes in data.groupby(['route']):
+            idct += len(routes)
+            if percent != int(idct / total * 100) :
+                percent = int(idct / total * 100)
+                print(f"\rmonth corr >> {percent:03d}", end = '%')
+            ws = wb.create_sheet(route)
+            airlines = sorted(routes['airline'].unique(), reverse = True, 
+                key = lambda x: len(routes.loc[routes['airline'] == x]))
+            ws.append(['采集日期', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + airlines)
+            ws.auto_filter.ref = 'A1:F1'
+            for idx in range(ws.max_column):
+                ws.cell(1, idx + 1).font = self.set_bold
+                ws.cell(1, idx + 1).alignment = self.set_align
+            ws.freeze_panes = 'G2'
+            for coll, colls in routes.groupby(['date_coll']):
+                if len(colls) <= 1:
+                    continue
+                output = [coll, colls['price_rate'].corr(colls['target']), 0, 0, 0, 0]
+                if coll >= max_coll:
+                    break
+                for airline in airlines:
+                    airline = colls.loc[routes['airline'] == airline]
+                    if len(airline) > 1:
+                        corr = airline['price_rate'].corr(airline['target'], 'pearson')
+                        output.append(round(corr, 4))
+                        if corr > 0.8:
+                            output[2] += 1
+                        elif corr > 0:
+                            output[3] += 1
+                        elif corr < -0.8:
+                            output[5] += 1
+                        elif corr < 0:
+                            output[4] += 1
+                    else:
+                        output.append(None)
+                ws.append(output)
+                ws.cell(ws.max_row, 1).number_format = "mm\"-\"dd"
+            rstring = f"{ws.cell(2, 7).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for rule in rules:
+                ws.conditional_formatting.add(rstring, rule)
+            ws.conditional_formatting.add(
+                f"C2:C{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            ws.conditional_formatting.add(
+                f"F2:F{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            
+            cell = ws.cell(1, 1)
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            cell = ws.cell(ws.max_row, 2, '返程')
+            route = route.split('-', 1)
+            cell.hyperlink = f"#'{route[1]}-{route[0]}'!A1"
+            cell.font = self.set_hyperlink
+            
+        print("\rsaving    ")
+        if file == '' or file is None:
+            file = f"corr_month_{self.__root.name}.xlsx"
+        elif not file.endswith(".xlsx"):
+            file += ".xlsx"
+        if not isinstance(path, Path):
+            path = Path(path)
+        path.mkdir(parents = True, exist_ok = True)
+        if (path / Path(file)).exists():
+            time = datetime.today().strftime("%H%M%S")
+            file = file.replace(".xlsx", f"_{time}.xlsx")
+        wb.save(path / Path(file))
+        wb.close()
+    
+    
+    def corr_adv(self, limit: int = 14, path: Path | str = Path(), file: str = ''):
+        ''''''
+        if not len(self.__merge):
+            self.__merge = self.merge()
+        data = self.__merge.drop(self.__merge[self.__merge['day_adv'] > limit].index)
+        
+        wb = self.indexbook()
+        rules = (
+            self.__diffrule(2, 'cellIs', '>', [0.9]), 
+            self.__diffrule(1, 'cellIs', '>', [0.8]), 
+            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '>', [0.5]), 
+            self.__diffrule(2, 'cellIs', '<', [-0.9]), 
+            self.__diffrule(1, 'cellIs', '<', [-0.8]), 
+            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '<', [-0.5]))
+        percent, idct = -1, 0
+        total = len(data)
+        data['date_flight'] = data['date_flight'].map(date.fromordinal)
+        data['date_coll'] = data['date_coll'].map(date.fromordinal)
+        
+        for route, routes in data.groupby(['route']):
+            idct += len(routes)
+            if percent != int(idct / total * 100) :
+                percent = int(idct / total * 100)
+                print(f"\radv corr >> {percent:03d}", end = '%')
+            ws = wb.create_sheet(route)
+            airlines = sorted(routes['airline'].unique(), reverse = True, 
+                key = lambda x: len(routes.loc[routes['airline'] == x]))
+            ws.append(['采集日期', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + airlines)
+            ws.auto_filter.ref = 'A1:F1'
+            for idx in range(ws.max_column):
+                ws.cell(1, idx + 1).font = self.set_bold
+                ws.cell(1, idx + 1).alignment = self.set_align
+            ws.freeze_panes = 'G2'
+            for coll, colls in routes.groupby(['date_coll']):
+                if len(colls) <= 1:
+                    continue
+                output = [coll, colls['price_rate'].corr(colls['day_adv'], 'pearson'), 0, 0, 0, 0]
+                for airline in airlines:
+                    airline = colls.loc[routes['airline'] == airline]
+                    if len(airline) > 1:
+                        corr = airline['price_rate'].corr(airline['day_adv'], 'pearson')
+                        output.append(round(corr, 4))
+                        if corr > 0.8:
+                            output[2] += 1
+                        elif corr > 0:
+                            output[3] += 1
+                        elif corr < -0.8:
+                            output[5] += 1
+                        elif corr < 0:
+                            output[4] += 1
+                    else:
+                        output.append(None)
+                ws.append(output)
+                ws.cell(ws.max_row, 1).number_format = "mm\"-\"dd"
+            rstring = f"{ws.cell(2, 7).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for rule in rules:
+                ws.conditional_formatting.add(rstring, rule)
+            ws.conditional_formatting.add(
+                f"C2:C{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            ws.conditional_formatting.add(
+                f"F2:F{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            
+            cell = ws.cell(1, 1)
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            cell = ws.cell(ws.max_row, 2, '返程')
+            route = route.split('-', 1)
+            cell.hyperlink = f"#'{route[1]}-{route[0]}'!A1"
+            cell.font = self.set_hyperlink
+            
+        print("\rsaving   ")
+        if file == '' or file is None:
+            file = f"corr_adv_{self.__root.name}.xlsx"
+        elif not file.endswith(".xlsx"):
+            file += ".xlsx"
+        if not isinstance(path, Path):
+            path = Path(path)
+        path.mkdir(parents = True, exist_ok = True)
+        if (path / Path(file)).exists():
+            time = datetime.today().strftime("%H%M%S")
+            file = file.replace(".xlsx", f"_{time}.xlsx")
+        wb.save(path / Path(file))
+        wb.close()
+    
+    
+    def corr_week(self, *days: int, path: Path | str = Path(), file: str = ''):
+        ''''''
+        if not len(self.__merge):
+            self.__merge = self.merge()
+        data = self.__merge.copy()
+        data['day_week'] = data['day_week'].map({
+            '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, 
+            '星期五': 5, '星期六': 6, '星期日': 7})
+        if not len(days):
+            days = [1, 2, 3, 4, 5, 6, 7]
+        wb = Workbook()
+        rules = (
+            self.__diffrule(2, 'cellIs', '>', [0.5]), 
+            self.__diffrule(1, 'cellIs', '>', [0.3]), 
+            self.__diffrule(2, 'cellIs', '<', [-0.5]), 
+            self.__diffrule(1, 'cellIs', '<', [-0.3]))
+        percent, idct = -1, 0
+        total = len(data) * len(days)
+        airlines = sorted(data['airline'].unique(), reverse = True, 
+            key = lambda x: len(data.loc[data['airline'] == x]))
+        for day in days:
+            ws = wb.create_sheet(str(day))
+            ws.append(['出发', '到达', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + airlines)
+            ws.auto_filter.ref = 'A1:G1'
+            for idx in range(ws.max_column):
+                ws.cell(1, idx + 1).font = self.set_bold
+                ws.cell(1, idx + 1).alignment = self.set_align
+            ws.freeze_panes = 'H2'
+            data['target'] = data['day_week'].map(lambda x: 1 if x == day else 0)
+            for route, routes in data.groupby(['route']):
+                idct += len(routes)
+                if percent != int(idct / total * 100):
+                    percent = int(idct / total * 100)
+                    print(f"\rweek corr >> {percent:03d}", end = '%')
+                if len(routes.loc[routes['day_week'] == day]) < \
+                    routes['date_coll'].nunique() * routes['date_flight'].nunique() / 2:
+                    continue
+                output = route.split('-', 1) + \
+                    [routes['price_rate'].corr(routes['target'], 'pearson'), 0, 0, 0, 0]
+                for airline in airlines:
+                    airline = routes.loc[routes['airline'] == airline]
+                    if len(airline):
+                        corr = airline['price_rate'].corr(airline['target'], 'pearson')
+                        output.append(round(corr, 4))
+                        if corr > 0.3:
+                            output[3] += 1
+                        elif corr > 0:
+                            output[4] += 1
+                        elif corr < -0.3:
+                            output[6] += 1
+                        elif corr < 0:
+                            output[5] += 1
+                    else:
+                        output.append(None)
+                ws.append(output)
+            rstring = f"{ws.cell(2, 8).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for rule in rules:
+                ws.conditional_formatting.add(rstring, rule)
+            ws.conditional_formatting.add(
+                f"D2:D{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            ws.conditional_formatting.add(
+                f"G2:G{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+        
+        print("\rsaving   ")
+        if file == '' or file is None:
+            file = f"corr_week_{self.__root.name}.xlsx"
+        elif not file.endswith(".xlsx"):
+            file += ".xlsx"
+        if not isinstance(path, Path):
+            path = Path(path)
+        path.mkdir(parents = True, exist_ok = True)
+        if (path / Path(file)).exists():
+            time = datetime.today().strftime("%H%M%S")
+            file = file.replace(".xlsx", f"_{time}.xlsx")
+        wb.remove(wb.active)
+        wb.save(path / Path(file))
+        wb.close()
+    
+    
+    def corr_hour(self, key: Literal['day_week', 'airline'], start: int = 6, end: int = 24, 
+                  path: Path | str = Path(), file: str = ''):
+        ''''''
+        if not len(self.__merge):
+            self.__merge = self.merge()
+        data = self.__merge.copy()
+        
+        wb = Workbook()
+        rules = (
+            self.__diffrule(2, 'cellIs', '>', [0.7]), 
+            self.__diffrule(1, 'cellIs', '>', [0.5]), 
+            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '>', [0.3]), 
+            self.__diffrule(2, 'cellIs', '<', [-0.7]), 
+            self.__diffrule(1, 'cellIs', '<', [-0.5]), 
+            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '<', [-0.3]))
+        percent, idct = -1, 0
+        targets = sorted(data[key].unique())
+        hours = tuple(range(start, end))
+        total = len(data) * len(hours)
+        for hour in hours:
+            ws = wb.create_sheet(str(hour))
+            if key == 'airline':
+                targets = sorted(data.loc[data['hour_dep'] == hour][key].unique(), 
+                    key = lambda x: len(data.loc[data[key] == x]), reverse = True)
+            ws.append(['出发', '到达', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + targets)
+            ws.auto_filter.ref = 'A1:G1'
+            for idx in range(ws.max_column):
+                ws.cell(1, idx + 1).font = self.set_bold
+                ws.cell(1, idx + 1).alignment = self.set_align
+            ws.freeze_panes = 'H2'
+            data['target'] = data['hour_dep'].map(lambda x: 1 if x == hour else 0)
+            for route, routes in data.groupby(['route']):
+                idct += len(routes)
+                if percent != int(idct / total * 100):
+                    percent = int(idct / total * 100)
+                    print(f"\rhour corr >> {percent:03d}", end = '%')
+                if len(routes.loc[routes['hour_dep'] == hour]) < \
+                    routes['date_coll'].nunique() * routes['date_flight'].nunique() / 2:
+                    continue
+                output = route.split('-', 1) + \
+                    [routes['price_rate'].corr(routes['target'], 'pearson'), 0, 0, 0, 0]
+                for item in targets:
+                    item = routes.loc[routes[key] == item]
+                    if len(item):
+                        corr = item['price_rate'].corr(item['target'], 'pearson')
+                        output.append(round(corr, 4))
+                        if corr > 0.5:
+                            output[3] += 1
+                        elif corr > 0:
+                            output[4] += 1
+                        elif corr < -0.5:
+                            output[6] += 1
+                        elif corr < 0:
+                            output[5] += 1
+                    else:
+                        output.append(None)
+                ws.append(output)
+            rstring = f"{ws.cell(2, 8).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for rule in rules:
+                ws.conditional_formatting.add(rstring, rule)
+            ws.conditional_formatting.add(
+                f"D2:D{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            ws.conditional_formatting.add(
+                f"G2:G{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+        
+        print("\rsaving   ")
+        if file == '' or file is None:
+            file = f"corr_hour_{self.__root.name}.xlsx"
+        elif not file.endswith(".xlsx"):
+            file += ".xlsx"
+        if not isinstance(path, Path):
+            path = Path(path)
+        path.mkdir(parents = True, exist_ok = True)
+        if (path / Path(file)).exists():
+            time = datetime.today().strftime("%H%M%S")
+            file = file.replace(".xlsx", f"_{time}.xlsx")
+        wb.remove(wb.active)
+        wb.save(path / Path(file))
+        wb.close()
+    
+if __name__ == "__main__":
+    rebuild = Rebuilder("2022-02-17")
+    rebuild.append_data('dataset_filtered.csv')
+    rebuild.corr_month(path = Path('.charts'), file = '月份相关系数')
+    rebuild.corr_adv(path = Path('.charts'), file = '提前相关系数')
+    rebuild.corr_week(path = Path('.charts'), file = '星期相关系数')
+    rebuild.corr_hour('day_week', path = Path('.charts'), file = '时刻与星期相关系数')
+    rebuild.corr_hour('airline', path = Path('.charts'), file = '时刻与航司相关系数')
+    rebuild.reset(True, True)
+    
