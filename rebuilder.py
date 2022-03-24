@@ -7,13 +7,16 @@ from datetime import datetime, date, timedelta
 from zipfile import ZipFile
 from pathlib import Path
 from civilaviation import CivilAviation
+from warnings import filterwarnings
 
 class Rebuilder():
     '''
     Rebuilder
-    -----
+    =====
     Rebuild all data by filtering factors that influence ticket rate.
     
+    Overviews
+    -----
     Here are 3 significant factors can be rebuilt in class methods:
     - `airlines`: Show density and ratio by routes and hours; show flight count by airports.
     - `routes`: Show mean and std by dates and days advanced; show density and ratio by hours.
@@ -23,6 +26,15 @@ class Rebuilder():
         - Excels contain sheets with detailed view.
         - Time are included as a detailed view. 
         - Aircraft types are ignored for little contribution.
+    
+    Correlation
+    -----
+    Calculate Pearson correlation coefficient by modifiable groups:
+    - `month`: Month of departure
+    - `adv`: Days before departure
+    - `week`: Day of week
+    - `hour`: Hour of departure
+    
     
     Data formatter
     -----
@@ -1237,10 +1249,9 @@ class Rebuilder():
             del output
     
     
-    def corr_month(self, year: int = 0, month: int = 0, 
+    def month(self, year: int = 0, month: int = 0, 
                    path: Path | str = Path(), file: str = ''):
-        ''''''
-        from warnings import filterwarnings
+        '''Calculate pearson correlation coefficient of tickets rate before `year`.`month`'''
         filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
@@ -1390,9 +1401,10 @@ class Rebuilder():
         wb.close()
     
     
-    def corr_adv(self, limit: int = 14, path: Path | str = Path(), file: str = ''):
-        ''''''
-        from warnings import filterwarnings
+    def adv(self, limit: int = 14, path: Path | str = Path(), file: str = ''):
+        '''Calculate pearson correlation coefficient of tickets rate 
+        in `limit` days before departure date'''
+        
         filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
@@ -1536,11 +1548,14 @@ class Rebuilder():
         wb.close()
     
     
-    def corr_week(self, *days: int, path: Path | str = Path(), file: str = ''):
-        ''''''
+    def week(self, *days: int, limit: int = 5, \
+        path: Path | str = Path(), file: str = ''):
+        '''Calculate pearson correlation coefficient of `days` of week
+        (only data more than `limit` days before departure and `limit` observations)'''
+        filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
-        data = self.__merge.copy()
+        data = self.__merge.drop(self.__merge[self.__merge['day_adv'] < limit].index)
         data['day_week'] = data['day_week'].map({
             '星期一': 1, '星期二': 2, '星期三': 3, '星期四': 4, 
             '星期五': 5, '星期六': 6, '星期日': 7})
@@ -1556,6 +1571,7 @@ class Rebuilder():
         total = len(data) * len(days)
         airlines = sorted(data['airline'].unique(), reverse = True, 
             key = lambda x: len(data.loc[data['airline'] == x]))
+        
         for day in days:
             ws = wb.create_sheet(str(day))
             ws.append(['出发', '到达', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + airlines)
@@ -1573,24 +1589,26 @@ class Rebuilder():
                 if len(routes.loc[routes['day_week'] == day]) < \
                     routes['date_coll'].nunique() * routes['date_flight'].nunique() / 2:
                     continue
-                output = route.split('-', 1) + \
-                    [routes['price_rate'].corr(routes['target'], 'pearson'), 0, 0, 0, 0]
-                for airline in airlines:
-                    airline = routes.loc[routes['airline'] == airline]
-                    if len(airline):
-                        corr = airline['price_rate'].corr(airline['target'], 'pearson')
-                        output.append(round(corr, 4))
-                        if corr > 0.3:
-                            output[3] += 1
-                        elif corr > 0:
-                            output[4] += 1
-                        elif corr < -0.3:
-                            output[6] += 1
-                        elif corr < 0:
-                            output[5] += 1
-                    else:
-                        output.append(None)
+                corr = routes['price_rate'].corr(routes['target'], 'pearson')
+                output = route.split('-', 1) + [corr, 0, 0, 0, 0] + \
+                    list(None for _ in range(len(airlines)))
+                for airline, group in routes.groupby(['airline']):
+                    if len(group.loc[group['day_week'] == day]) <= limit:
+                        continue
+                    corr = group['price_rate'].corr(group['target'], 'pearson', limit)
+                    output[airlines.index(airline) + 7] = round(corr, 4)
+                    if corr > 0.3:
+                        output[3] += 1
+                    elif corr > 0:
+                        output[4] += 1
+                    elif corr < -0.3:
+                        output[6] += 1
+                    elif corr < 0:
+                        output[5] += 1
                 ws.append(output)
+            for idx in range(1, ws.max_row):
+                if -0.1 <= ws.cell(idx + 1, 3).value <= 0.1:
+                    ws.row_dimensions[idx + 1].hidden = 1
             rstring = f"H2:{ws.cell(ws.max_row, ws.max_column).coordinate}"
             for rule in rules:
                 ws.conditional_formatting.add(rstring, rule)
@@ -1600,6 +1618,7 @@ class Rebuilder():
                 f"G2:G{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
         
         print("\rsaving   ")
+        filterwarnings("default")
         if file == '' or file is None:
             file = f"corr_week_{self.__root.name}.xlsx"
         elif not file.endswith(".xlsx"):
@@ -1615,12 +1634,15 @@ class Rebuilder():
         wb.close()
     
     
-    def corr_hour(self, key: Literal['day_week', 'airline'], start: int = 6, end: int = 24, 
-                  path: Path | str = Path(), file: str = ''):
-        ''''''
+    def hour(self, key: Literal['day_week', 'airline'], start: int = 6, end: int = 24, 
+                  limit: int = 5, path: Path | str = Path(), file: str = ''):
+        '''Calculate pearson correlation coefficient of hours 
+        from `start` to `end` in group of `key`
+        (only data more than `limit` days before departure and `limit` observations)'''
+        filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
-        data = self.__merge.copy()
+        data = self.__merge.drop(self.__merge[self.__merge['day_adv'] < limit].index)
         
         wb = Workbook()
         rules = (
@@ -1658,22 +1680,21 @@ class Rebuilder():
                     routes['date_coll'].nunique() * routes['date_flight'].nunique() / 2:
                     continue
                 corr = routes['price_rate'].corr(routes['target'], 'pearson')
-                output = route.split('-', 1) + [corr, 0, 0, 0, 0]
-                for item in targets:
-                    item = routes.loc[routes[key] == item]
-                    if len(item):
-                        corr = item['price_rate'].corr(item['target'], 'pearson')
-                        output.append(round(corr, 4))
-                        if corr > 0.5:
-                            output[3] += 1
-                        elif corr > 0:
-                            output[4] += 1
-                        elif corr < -0.5:
-                            output[6] += 1
-                        elif corr < 0:
-                            output[5] += 1
-                    else:
-                        output.append(None)
+                output = route.split('-', 1) + [corr, 0, 0, 0, 0] + \
+                    list(None for _ in range(len(targets)))
+                for item, group in routes.groupby([key]):
+                    if len(group.loc[group['hour_dep'] == hour]) <= limit:
+                        continue
+                    corr = group['price_rate'].corr(group['target'], 'pearson', limit)
+                    output[targets.index(item) + 7] = round(corr, 4)
+                    if corr > 0.5:
+                        output[3] += 1
+                    elif corr > 0:
+                        output[4] += 1
+                    elif corr < -0.5:
+                        output[6] += 1
+                    elif corr < 0:
+                        output[5] += 1
                 ws.append(output)
             for idx in range(1, ws.max_row):
                 if -0.1 <= ws.cell(idx + 1, 3).value <= 0.1:
@@ -1687,6 +1708,7 @@ class Rebuilder():
                 f"G2:G{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
         
         print("\rsaving   ")
+        filterwarnings("default")
         if file == '' or file is None:
             file = f"corr_hour_{key}_{self.__root.name}.xlsx"
         elif not file.endswith(".xlsx"):
@@ -1700,14 +1722,4 @@ class Rebuilder():
         wb.remove(wb.active)
         wb.save(path / Path(file))
         wb.close()
-    
-if __name__ == "__main__":
-    rebuild = Rebuilder("2022-02-17")
-    rebuild.append_data('dataset_filtered.csv')
-    rebuild.corr_month(path = Path('.charts'), file = '月份相关系数')
-    rebuild.corr_adv(path = Path('.charts'), file = '提前相关系数')
-    rebuild.corr_week(path = Path('.charts'), file = '星期相关系数')
-    rebuild.corr_hour('day_week', path = Path('.charts'), file = '时刻与星期相关系数')
-    rebuild.corr_hour('airline', path = Path('.charts'), file = '时刻与航司相关系数')
-    rebuild.reset(True, True)
     
