@@ -286,36 +286,42 @@ class Rebuilder():
         return warn
     
     @staticmethod
-    def __diffrule(index: int | tuple[str, str], type: str, op: str = None, formula = ()) -> Rule:
+    def __diffrule(index: int | Literal['red', 'yellow', 'blue', 'green'] | tuple[str, str], 
+                   type: str, op: str = None, formula = ()) -> Rule:
         '''index == 0 -> bold, even index -> red, odd index -> yellow, 
-        tuple[str, str] index -> color(font, patternfill)'''
+        str -> color, tuple[str, str] index -> color(font, patternfill)'''
         exp = {
             ">": "greaterThan", ">=": "greaterThanOrEqual", "<": "lessThan", 
             "<=": "lessThanOrEqual", "=": "equal", "==": "equal", "!=": "notEqual"}
-        parameters = {}
-        if index == 0:
-            parameters['font'] = Font(bold = "b")
-        elif isinstance(index, tuple) or isinstance(index, list):
-            parameters['font'] = Font(color = index[0])
-            parameters['fill'] = PatternFill(bgColor = index[1], fill_type = "solid")
-        elif index % 2:
-            parameters['font'] = Font(color = "CC6600")
-            parameters['fill'] = PatternFill(bgColor = "FFEBCD", fill_type = "solid")
-        else:
-            parameters['font'] = Font(color = "CC0000")
-            parameters['fill'] = PatternFill(bgColor = "FFCCCC", fill_type = "solid")
+        if isinstance(index, int):
+            if index == 0:
+                return Rule(type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
+                    dxf = differential.DifferentialStyle(font = Font(bold = "b")))
+            elif index % 2:
+                index = 'yellow'
+            else:
+                index = 'red'
+        map = {'red': ("CC0000", "FFCCCC"), 'yellow': ("CC6600", "FFEBCD"), 
+               'blue': ("0000CC", "CCECFF"), 'green': ("008000", "CCFFCC")}
+        index = map.get(index, ('000000', 'F0F0F0'))
         return Rule(type, operator = exp.get(op, op), stopIfTrue = False, formula = formula,
-                    dxf = differential.DifferentialStyle(**parameters))
+                    dxf = differential.DifferentialStyle(font = Font(color = index[0]), \
+                        fill = PatternFill(bgColor = index[1], fill_type = "solid")))
     
-    def indexbook(self, *routes: str):
+    def indexbook(self, data: pandas.DataFrame = None, airlines: bool = False):
         '''Return a workbook with route index aka menu'''
+        data = self.__merge if data is None else data.get(['route', 'airline'])
         wb = Workbook()
         ws = wb.active
         ws.title = self.index_name
-        ws.append(('出发', '到达'))
-        ws.auto_filter.ref, ws.freeze_panes = 'A1:A1', 'B2'
+        ws.append(('航空公司' if airlines else '', '出发', '到达'))
+        for idx in range(1, 4):
+            ws.cell(1, idx).font = self.set_bold
+            ws.cell(1, idx).alignment = self.set_align
+        ws.auto_filter.ref, ws.freeze_panes = 'A1:B1', 'C2'
+        
         cities, row = {}, 1
-        for route in routes if len(routes) else self.__merge['route'].unique():
+        for route in data['route'].unique():
             dep, arr = route.split('-', 1)
             if cities.get(dep):
                 cities[dep].append(arr)
@@ -324,18 +330,26 @@ class Rebuilder():
         for city in cities.keys():
             cities[city].sort(key = lambda x: len(cities[x]), reverse = True)
         for dep in sorted(cities.keys(), key = lambda x: len(cities[x]), reverse = True):
-            col = 1
+            col = 2
             row += 1
-            cell = ws.cell(row, col, dep)
+            ws.cell(row, col, dep).alignment = self.set_align
             for arr in cities[dep]:
                 col += 1
                 cell = ws.cell(row, col, arr)
                 cell.hyperlink = f"#'{dep}-{arr}'!A1"
                 cell.font = self.set_hyperlink
                 cell.alignment = self.set_align
-        for idx in range(1, 3):
-            ws.cell(1, idx).font = self.set_bold
-            ws.cell(1, idx).alignment = self.set_align
+        
+        if airlines:
+            ws.column_dimensions['A'].width = 12
+            airlines = sorted(data['airline'].unique(), reverse = True, \
+                key = lambda x: len(data.loc[data['airline'] == x]))
+            for idx in range(len(airlines)):
+                airline = airlines[idx]
+                cell = ws.cell(idx + 2, 1, airline)
+                cell.hyperlink = f"#'{airline}'!A1"
+                cell.alignment = self.set_align
+                cell.font = self.set_hyperlink
         return wb
     
     
@@ -701,32 +715,32 @@ class Rebuilder():
             title_coll[name] = sorted(group['date_coll'].unique(), reverse = True)
             
             for hour in range(5, 25):
-                hour_airline = group.loc[group['hour_dep'] == hour, : ].get('hour_comp', 0).mean()
+                hour_airline = group.loc[group['hour_dep'] == hour].get('hour_comp', 0).mean()
                 route_comp[name].append(hour_airline if hour_airline else None)
                 hour_count = group['hour_dep'].value_counts().get(hour, 0)
                 route_density[name].append(round(hour_count / len(group['hour_dep']), 2) \
                     if hour_count else None)
-                hour_ratio = group.loc[group['hour_dep'] == hour, : ].get('ratio_daily', 0).mean()
+                hour_ratio = group.loc[group['hour_dep'] == hour].get('ratio_daily', 0).mean()
                 route_ratio[name].append(round(hour_ratio, 2) if hour_ratio else None)
             for day in data['day_adv'].unique():
-                mean = group.loc[group['day_adv'] == day, : ].get('price_rate', 0).mean()
+                mean = group.loc[group['day_adv'] == day].get('price_rate', 0).mean()
                 if mean:
                     route_adv_mean[name].append(mean)
                 else:
                     route_adv_mean[name].append(None)
                     continue
-                std = group.loc[group['day_adv'] == day, : ].get('price_rate', 0).std()
+                std = group.loc[group['day_adv'] == day].get('price_rate', 0).std()
                 route_adv_std[name].append(std if std else None)
             for ordinal in data['date_flight'].unique():
-                mean = group.loc[group['date_flight'] == ordinal, : ].get('price_rate', 0).mean()
+                mean = group.loc[group['date_flight'] == ordinal].get('price_rate', 0).mean()
                 if mean:
                     route_date_mean[name].append(mean)
                     footers[name]['date'][ordinal] = [mean, 
-                        group.loc[group['date_flight'] == ordinal, : ].get('price_rate', 0).median()]
+                        group.loc[group['date_flight'] == ordinal].get('price_rate', 0).median()]
                 else:
                     route_date_mean[name].append(None)
                     continue
-                std = group.loc[group['date_flight'] == ordinal, : ].get('price_rate', 0).std()
+                std = group.loc[group['date_flight'] == ordinal].get('price_rate', 0).std()
                 route_date_std[name].append(std if std else None)
             for day in group['date_flight'].unique():
                 route_date[name][day] = list(None for _ in title_adv[name])
@@ -945,7 +959,7 @@ class Rebuilder():
                 count = group['hour_dep'].value_counts().get(hour, 0)
                 hour_density[name].append(round(count / len(group['hour_dep']), 2) \
                     if count else None)
-                ratio = group.loc[group['hour_dep'] == hour, : ].get('ratio_daily').mean()
+                ratio = group.loc[group['hour_dep'] == hour].get('ratio_daily').mean()
                 hour_ratio[name].append(ratio if ratio else None)
             
             idct += len(group) / 4
@@ -956,10 +970,10 @@ class Rebuilder():
                 airlines[name][route] = []
                 idx = title_route.index(route) - len(title)
                 count = group['route'].value_counts().get(route)
-                days = len(group.loc[group['route'] == route, \
-                    : ][['date_coll', 'date_flight']].drop_duplicates())
+                days = len(group.loc[group['route'] == route]\
+                    [['date_coll', 'date_flight']].drop_duplicates())
                 route_density[name][idx] = count / days
-                ratio = group.loc[group['route'] == route, : ].get('ratio_daily').mean()
+                ratio = group.loc[group['route'] == route].get('ratio_daily').mean()
                 route_ratio[name][idx] = ratio
             
             idct += len(group) / 4
@@ -969,8 +983,8 @@ class Rebuilder():
             for dep in group['dep'].unique():
                 idx = title_dep.index(dep) - len(title)
                 count = group['dep'].value_counts().get(dep) 
-                dep_ap[name][idx] = count / len(group.loc[group['dep'] == dep, \
-                        : ][['date_coll', 'date_flight']].drop_duplicates())
+                dep_ap[name][idx] = count / len(group.loc[group['dep'] == dep]\
+                    [['date_coll', 'date_flight']].drop_duplicates())
             
             idct += len(group) / 4
             if percent != int(idct / total * 100):
@@ -979,7 +993,7 @@ class Rebuilder():
             for route, _group in group.groupby(['route']):
                 airlines[name][route] = []
                 for hour in range(5, 25):
-                    ratio = _group.loc[_group['hour_dep'] == hour, : ].get('ratio_daily').mean()
+                    ratio = _group.loc[_group['hour_dep'] == hour].get('ratio_daily').mean()
                     airlines[name][route].append(ratio if ratio else None)
             for route in group['route'].unique():
                 if routes.get(route):
@@ -987,13 +1001,7 @@ class Rebuilder():
                 else:
                     routes[route] = {name: airlines[name][route].copy()}
         
-        '''Add index aka menu and overviews'''
-        wb = self.indexbook()
-        cell = ws.cell(1, 3, '航空公司')
-        cell.hyperlink = f"#'航线密度'!A1"
-        cell.font = self.set_hyperlink
-        cell.alignment = self.set_align
-        
+        wb = self.indexbook(airlines = True)
         for sheet in ('航线密度', '航线系数'):
             ws = wb.create_sheet(sheet)
             ws.append(title_route)
@@ -1160,11 +1168,11 @@ class Rebuilder():
                 print('ERROR: No data loaded or incorrect path!')
                 return None
         data = self.__merge.copy(False)
-        rate_error = data.loc[data['price_rate'] == 0, :]
+        rate_error = data.loc[data['price_rate'] == 0]
         if len(rate_error):
             data['airfare'] = rate_error[['dep', 'arr']].apply(self.__airData.get_airfare)
             data['price_rate'] = rate_error['price_rate'] / data['airfare']
-            data['price_rate'] = data.loc[data['price_rate'] > 1, :]['price_rate'] = 1
+            data['price_rate'] = data.loc[data['price_rate'] > 1]['price_rate'] = 1
         
         data['time'] = data['hour_dep'].apply(lambda x: 1 if 9 <= x <= 20 else 0)
         rates = data.groupby(['dep', 'arr', 'time', 'date_coll', 'date_flight'])['price_rate']
@@ -1229,33 +1237,90 @@ class Rebuilder():
             del output
     
     
-    def corr_month(self, year: int = 0, month: int = 0, path: Path | str = Path(), file: str = ''):
+    def corr_month(self, year: int = 0, month: int = 0, 
+                   path: Path | str = Path(), file: str = ''):
         ''''''
+        from warnings import filterwarnings
+        filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
-        data = self.__merge.copy()
-        
-        wb = self.indexbook()
-        rules = (
-            self.__diffrule(2, 'cellIs', '>', [0.9]),
-            self.__diffrule(1, 'cellIs', '>', [0.8]),
-            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '>', [0.5]),
-            self.__diffrule(2, 'cellIs', '<', [-0.9]), 
-            self.__diffrule(1, 'cellIs', '<', [-0.8]), 
-            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '<', [-0.5]))
-        percent, idct = -1, 0
-        total = len(data)
-        data['date_flight'] = data['date_flight'].map(date.fromordinal)
-        data['date_coll'] = data['date_coll'].map(date.fromordinal)
-        max_coll = data['date_coll'].max()
+        max_coll = date.fromordinal(self.__merge['date_coll'].max())
         month = month if month else max_coll.month
         year = year if year else max_coll.year
+        max_coll = (datetime(year, month, 1) - timedelta(1)).date().toordinal()
+        data = self.__merge.drop(
+            self.__merge[self.__merge['date_coll'] >= max_coll].index).reset_index()
+        
+        wb = self.indexbook(airlines = True)
+        rules = (
+            self.__diffrule('red', 'cellIs', '>', [0.9]),
+            self.__diffrule('yellow', 'cellIs', '>', [0.8]),
+            self.__diffrule('', 'cellIs', '>', [0.5]),
+            self.__diffrule('blue', 'cellIs', '<', [-0.9]), 
+            self.__diffrule('green', 'cellIs', '<', [-0.8]), 
+            self.__diffrule('', 'cellIs', '<', [-0.5]))
+        percent, idct = -1, 0
+        total = len(data) * 2
+        data['date_flight'] = data['date_flight'].map(date.fromordinal)
+        data['date_coll'] = data['date_coll'].map(date.fromordinal)
         data['target'] = data['date_flight'].map(lambda x: 1 if x.month == month else 0)
-        max_coll = (datetime(year, month, 1) - timedelta(1)).date()
+        
+        for airline, airlines in data.groupby(['airline']):
+            ws = wb.create_sheet(airline)
+            routes = sorted(airlines['route'].unique(), reverse = True, 
+                key = lambda x: len(airlines.loc[airlines['route'] == x]))
+            ws.append(['采集日期', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + routes)
+            ws.auto_filter.ref = 'A1:F1'
+            for idx in range(ws.max_column):
+                cell = ws.cell(1, idx + 1)
+                cell.alignment = self.set_align
+                if idx >= 6:
+                    cell.hyperlink = f"#'{cell.value}'!A1"
+                    cell.font = self.set_hyperlink
+                else:
+                    cell.font = self.set_bold
+            ws.freeze_panes = 'G2'
+            for coll, colls in airlines.groupby(['date_coll']):
+                idct += len(colls)
+                if percent != int(idct / total * 100):
+                    percent = int(idct / total * 100)
+                    print(f"\rmonth corr >> {percent:03d}", end = '%')
+                if len(colls) <= 1:
+                    continue
+                corr = colls['price_rate'].corr(colls['target'])
+                output = [coll, corr, 0, 0, 0, 0] + list(None for _ in range(len(routes)))
+                for route, group in colls.groupby(['route']):
+                    corr = group['price_rate'].corr(group['target'], 'pearson')
+                    output[routes.index(route) + 6] = round(corr, 4)
+                    if corr > 0.8:
+                        output[2] += 1
+                    elif corr > 0:
+                        output[3] += 1
+                    elif corr < -0.8:
+                        output[5] += 1
+                    elif corr < 0:
+                        output[4] += 1
+                ws.append(output)
+                ws.cell(ws.max_row, 1).number_format = "mm\"-\"dd"
+            rstring = f"G2:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for rule in rules:
+                ws.conditional_formatting.add(rstring, rule)
+            ws.conditional_formatting.add(
+                f"C2:C{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            ws.conditional_formatting.add(
+                f"F2:F{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            
+            cell = ws.cell(1, 1)
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+        
         
         for route, routes in data.groupby(['route']):
             idct += len(routes)
-            if percent != int(idct / total * 100) :
+            if percent != int(idct / total * 100):
                 percent = int(idct / total * 100)
                 print(f"\rmonth corr >> {percent:03d}", end = '%')
             ws = wb.create_sheet(route)
@@ -1264,33 +1329,33 @@ class Rebuilder():
             ws.append(['采集日期', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + airlines)
             ws.auto_filter.ref = 'A1:F1'
             for idx in range(ws.max_column):
-                ws.cell(1, idx + 1).font = self.set_bold
-                ws.cell(1, idx + 1).alignment = self.set_align
+                cell = ws.cell(1, idx + 1)
+                cell.alignment = self.set_align
+                if idx >= 6:
+                    cell.hyperlink = f"#'{cell.value}'!A1"
+                    cell.font = self.set_hyperlink
+                else:
+                    cell.font = self.set_bold
             ws.freeze_panes = 'G2'
             for coll, colls in routes.groupby(['date_coll']):
                 if len(colls) <= 1:
                     continue
-                output = [coll, colls['price_rate'].corr(colls['target']), 0, 0, 0, 0]
-                if coll >= max_coll:
-                    break
-                for airline in airlines:
-                    airline = colls.loc[routes['airline'] == airline]
-                    if len(airline) > 1:
-                        corr = airline['price_rate'].corr(airline['target'], 'pearson')
-                        output.append(round(corr, 4))
-                        if corr > 0.8:
-                            output[2] += 1
-                        elif corr > 0:
-                            output[3] += 1
-                        elif corr < -0.8:
-                            output[5] += 1
-                        elif corr < 0:
-                            output[4] += 1
-                    else:
-                        output.append(None)
+                corr = colls['price_rate'].corr(colls['target'])
+                output = [coll, corr, 0, 0, 0, 0] + list(None for _ in range(len(airlines)))
+                for airline, group in colls.groupby(['airline']):
+                    corr = group['price_rate'].corr(group['target'], 'pearson')
+                    output[airlines.index(airline) + 6] = round(corr, 4)
+                    if corr > 0.8:
+                        output[2] += 1
+                    elif corr > 0:
+                        output[3] += 1
+                    elif corr < -0.8:
+                        output[5] += 1
+                    elif corr < 0:
+                        output[4] += 1
                 ws.append(output)
                 ws.cell(ws.max_row, 1).number_format = "mm\"-\"dd"
-            rstring = f"{ws.cell(2, 7).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            rstring = f"G2:{ws.cell(ws.max_row, ws.max_column).coordinate}"
             for rule in rules:
                 ws.conditional_formatting.add(rstring, rule)
             ws.conditional_formatting.add(
@@ -1310,6 +1375,7 @@ class Rebuilder():
             cell.font = self.set_hyperlink
             
         print("\rsaving    ")
+        filterwarnings("default")
         if file == '' or file is None:
             file = f"corr_month_{self.__root.name}.xlsx"
         elif not file.endswith(".xlsx"):
@@ -1326,26 +1392,81 @@ class Rebuilder():
     
     def corr_adv(self, limit: int = 14, path: Path | str = Path(), file: str = ''):
         ''''''
+        from warnings import filterwarnings
+        filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
         data = self.__merge.drop(self.__merge[self.__merge['day_adv'] > limit].index)
         
-        wb = self.indexbook()
+        wb = self.indexbook(airlines = True)
         rules = (
-            self.__diffrule(2, 'cellIs', '>', [0.9]), 
-            self.__diffrule(1, 'cellIs', '>', [0.8]), 
-            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '>', [0.5]), 
-            self.__diffrule(2, 'cellIs', '<', [-0.9]), 
-            self.__diffrule(1, 'cellIs', '<', [-0.8]), 
-            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '<', [-0.5]))
+            self.__diffrule('red', 'cellIs', '>', [0.9]), 
+            self.__diffrule('yellow', 'cellIs', '>', [0.8]), 
+            self.__diffrule('', 'cellIs', '>', [0.5]), 
+            self.__diffrule('blue', 'cellIs', '<', [-0.9]), 
+            self.__diffrule('green', 'cellIs', '<', [-0.8]), 
+            self.__diffrule('', 'cellIs', '<', [-0.5]))
         percent, idct = -1, 0
-        total = len(data)
+        total = len(data) * 2
         data['date_flight'] = data['date_flight'].map(date.fromordinal)
         data['date_coll'] = data['date_coll'].map(date.fromordinal)
         
+        for airline, airlines in data.groupby(['airline']):
+            idct += len(airlines)
+            if percent != int(idct / total * 100):
+                percent = int(idct / total * 100)
+                print(f"\radv corr >> {percent:03d}", end = '%')
+            ws = wb.create_sheet(airline)
+            routes = sorted(airlines['route'].unique(), reverse = True, 
+                key = lambda x: len(airlines.loc[airlines['route'] == x]))
+            ws.append(['采集日期', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + routes)
+            ws.auto_filter.ref = 'A1:F1'
+            for idx in range(ws.max_column):
+                cell = ws.cell(1, idx + 1)
+                cell.alignment = self.set_align
+                if idx >= 6:
+                    cell.hyperlink = f"#'{cell.value}'!A1"
+                    cell.font = self.set_hyperlink
+                else:
+                    cell.font = self.set_bold
+            ws.freeze_panes = 'G2'
+            for coll, colls in airlines.groupby(['date_coll']):
+                if len(colls) <= 1:
+                    continue
+                corr = colls['price_rate'].corr(colls['day_adv'], 'pearson')
+                output = [coll, corr, 0, 0, 0, 0] + list(None for _ in range(len(routes)))
+                for route, group in colls.groupby(['route']):
+                    corr = group['price_rate'].corr(group['day_adv'], 'pearson')
+                    output[routes.index(route) + 6] = round(corr, 4)
+                    if corr > 0.8:
+                        output[2] += 1
+                    elif corr > 0:
+                        output[3] += 1
+                    elif corr < -0.8:
+                        output[5] += 1
+                    elif corr < 0:
+                        output[4] += 1
+                ws.append(output)
+                ws.cell(ws.max_row, 1).number_format = "mm\"-\"dd"
+            rstring = f"G2:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for rule in rules:
+                ws.conditional_formatting.add(rstring, rule)
+            ws.conditional_formatting.add(
+                f"C2:C{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            ws.conditional_formatting.add(
+                f"F2:F{ws.max_row}", self.__diffrule(0, 'cellIs', '>=', [1]))
+            
+            cell = ws.cell(1, 1)
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+            cell = ws.cell(ws.max_row + 1, 1, '返回索引')
+            cell.hyperlink = f"#'{self.index_name}'!A1"
+            cell.font = self.set_hyperlink
+        
+        
         for route, routes in data.groupby(['route']):
             idct += len(routes)
-            if percent != int(idct / total * 100) :
+            if percent != int(idct / total * 100):
                 percent = int(idct / total * 100)
                 print(f"\radv corr >> {percent:03d}", end = '%')
             ws = wb.create_sheet(route)
@@ -1354,28 +1475,30 @@ class Rebuilder():
             ws.append(['采集日期', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + airlines)
             ws.auto_filter.ref = 'A1:F1'
             for idx in range(ws.max_column):
-                ws.cell(1, idx + 1).font = self.set_bold
-                ws.cell(1, idx + 1).alignment = self.set_align
+                cell = ws.cell(1, idx + 1)
+                cell.alignment = self.set_align
+                if idx >= 6:
+                    cell.hyperlink = f"#'{cell.value}'!A1"
+                    cell.font = self.set_hyperlink
+                else:
+                    cell.font = self.set_bold
             ws.freeze_panes = 'G2'
             for coll, colls in routes.groupby(['date_coll']):
                 if len(colls) <= 1:
                     continue
-                output = [coll, colls['price_rate'].corr(colls['day_adv'], 'pearson'), 0, 0, 0, 0]
-                for airline in airlines:
-                    airline = colls.loc[routes['airline'] == airline]
-                    if len(airline) > 1:
-                        corr = airline['price_rate'].corr(airline['day_adv'], 'pearson')
-                        output.append(round(corr, 4))
-                        if corr > 0.8:
-                            output[2] += 1
-                        elif corr > 0:
-                            output[3] += 1
-                        elif corr < -0.8:
-                            output[5] += 1
-                        elif corr < 0:
-                            output[4] += 1
-                    else:
-                        output.append(None)
+                corr = colls['price_rate'].corr(colls['day_adv'], 'pearson')
+                output = [coll, corr, 0, 0, 0, 0] + list(None for _ in range(len(airlines)))
+                for airline, group in colls.groupby(['airline']):
+                    corr = group['price_rate'].corr(group['day_adv'], 'pearson')
+                    output[airlines.index(airline) + 6] = round(corr, 4)
+                    if corr > 0.8:
+                        output[2] += 1
+                    elif corr > 0:
+                        output[3] += 1
+                    elif corr < -0.8:
+                        output[5] += 1
+                    elif corr < 0:
+                        output[4] += 1
                 ws.append(output)
                 ws.cell(ws.max_row, 1).number_format = "mm\"-\"dd"
             rstring = f"{ws.cell(2, 7).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
@@ -1396,8 +1519,9 @@ class Rebuilder():
             route = route.split('-', 1)
             cell.hyperlink = f"#'{route[1]}-{route[0]}'!A1"
             cell.font = self.set_hyperlink
-            
+        
         print("\rsaving   ")
+        filterwarnings("default")
         if file == '' or file is None:
             file = f"corr_adv_{self.__root.name}.xlsx"
         elif not file.endswith(".xlsx"):
@@ -1424,10 +1548,10 @@ class Rebuilder():
             days = [1, 2, 3, 4, 5, 6, 7]
         wb = Workbook()
         rules = (
-            self.__diffrule(2, 'cellIs', '>', [0.5]), 
-            self.__diffrule(1, 'cellIs', '>', [0.3]), 
-            self.__diffrule(2, 'cellIs', '<', [-0.5]), 
-            self.__diffrule(1, 'cellIs', '<', [-0.3]))
+            self.__diffrule('red', 'cellIs', '>', [0.5]), 
+            self.__diffrule('yellow', 'cellIs', '>', [0.3]), 
+            self.__diffrule('blue', 'cellIs', '<', [-0.5]), 
+            self.__diffrule('green', 'cellIs', '<', [-0.3]))
         percent, idct = -1, 0
         total = len(data) * len(days)
         airlines = sorted(data['airline'].unique(), reverse = True, 
@@ -1467,7 +1591,7 @@ class Rebuilder():
                     else:
                         output.append(None)
                 ws.append(output)
-            rstring = f"{ws.cell(2, 8).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            rstring = f"H2:{ws.cell(ws.max_row, ws.max_column).coordinate}"
             for rule in rules:
                 ws.conditional_formatting.add(rstring, rule)
             ws.conditional_formatting.add(
@@ -1500,21 +1624,24 @@ class Rebuilder():
         
         wb = Workbook()
         rules = (
-            self.__diffrule(2, 'cellIs', '>', [0.7]), 
-            self.__diffrule(1, 'cellIs', '>', [0.5]), 
-            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '>', [0.3]), 
-            self.__diffrule(2, 'cellIs', '<', [-0.7]), 
-            self.__diffrule(1, 'cellIs', '<', [-0.5]), 
-            self.__diffrule(('000000', 'F0F0F0'), 'cellIs', '<', [-0.3]))
+            self.__diffrule('red', 'cellIs', '>', [0.7]), 
+            self.__diffrule('yellow', 'cellIs', '>', [0.5]), 
+            self.__diffrule('', 'cellIs', '>', [0.3]), 
+            self.__diffrule('blue', 'cellIs', '<', [-0.7]), 
+            self.__diffrule('green', 'cellIs', '<', [-0.5]), 
+            self.__diffrule('', 'cellIs', '<', [-0.3]))
         percent, idct = -1, 0
-        targets = sorted(data[key].unique())
         hours = tuple(range(start, end))
         total = len(data) * len(hours)
         for hour in hours:
             ws = wb.create_sheet(str(hour))
-            if key == 'airline':
-                targets = sorted(data.loc[data['hour_dep'] == hour][key].unique(), 
-                    key = lambda x: len(data.loc[data[key] == x]), reverse = True)
+            targets = sorted(
+                data.loc[data['hour_dep'] == hour][key].unique(), \
+                    key = lambda x: len(data.loc[data[key] == x]), reverse = True) \
+                if key == 'airline' else \
+                    ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'] \
+                if key == 'day_week' else \
+                    sorted(data.loc[data['hour_dep'] == hour][key].unique())
             ws.append(['出发', '到达', '相关平均', '强正相关', '正相关', '负相关', '强负相关'] + targets)
             ws.auto_filter.ref = 'A1:G1'
             for idx in range(ws.max_column):
@@ -1530,8 +1657,8 @@ class Rebuilder():
                 if len(routes.loc[routes['hour_dep'] == hour]) < \
                     routes['date_coll'].nunique() * routes['date_flight'].nunique() / 2:
                     continue
-                output = route.split('-', 1) + \
-                    [routes['price_rate'].corr(routes['target'], 'pearson'), 0, 0, 0, 0]
+                corr = routes['price_rate'].corr(routes['target'], 'pearson')
+                output = route.split('-', 1) + [corr, 0, 0, 0, 0]
                 for item in targets:
                     item = routes.loc[routes[key] == item]
                     if len(item):
@@ -1548,7 +1675,10 @@ class Rebuilder():
                     else:
                         output.append(None)
                 ws.append(output)
-            rstring = f"{ws.cell(2, 8).coordinate}:{ws.cell(ws.max_row, ws.max_column).coordinate}"
+            for idx in range(1, ws.max_row):
+                if -0.1 <= ws.cell(idx + 1, 3).value <= 0.1:
+                    ws.row_dimensions[idx + 1].hidden = 1
+            rstring = f"H2:{ws.cell(ws.max_row, ws.max_column).coordinate}"
             for rule in rules:
                 ws.conditional_formatting.add(rstring, rule)
             ws.conditional_formatting.add(
@@ -1558,7 +1688,7 @@ class Rebuilder():
         
         print("\rsaving   ")
         if file == '' or file is None:
-            file = f"corr_hour_{self.__root.name}.xlsx"
+            file = f"corr_hour_{key}_{self.__root.name}.xlsx"
         elif not file.endswith(".xlsx"):
             file += ".xlsx"
         if not isinstance(path, Path):
