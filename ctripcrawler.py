@@ -369,6 +369,7 @@ class CtripCrawler():
         values_only: bool = kwargs.get('values_only', False)
         parts: int = kwargs.get('parts', 0)
         part: int = kwargs.get('part', 0)
+        lessretry: set = kwargs.get('lessretry', set())
         
         '''Part separates'''
         routes = []
@@ -404,6 +405,10 @@ class CtripCrawler():
                     elif i != 0 and data_diff > 0:
                         break
                     elif j == 1:
+                        if dep in lessretry or arr in lessretry:
+                            print(f' ...few data in {dep}-{arr} ', 
+                                  end = collectDate.strftime('%m/%d'))
+                            break
                         print(' ...retry', end = '')
                 else:
                     if i == 0 and data_diff < self.ignore_threshold:
@@ -412,7 +417,8 @@ class CtripCrawler():
                         __ignores.add((dep, arr))
                         break
                     elif data_diff < limits:
-                        print(f' WARN: few data in {dep}-{arr} ', end = collectDate.isoformat())
+                        print(f' WARN: few data in {dep}-{arr} ', 
+                              end = collectDate.strftime('%m/%d'))
                         self.__warn += 1
 
                 '''Get INbound flights data, 3 attempts for ample data'''
@@ -425,6 +431,10 @@ class CtripCrawler():
                         elif i != 0 and data_diff > 0:
                             break
                         elif j == 1:
+                            if dep in lessretry or arr in lessretry:
+                                print(f' ...few data in {arr}-{dep} ', 
+                                      end = collectDate.strftime('%m/%d'))
+                                break
                             print(' ...retry', end = '')
                     else:
                         if i == 0 and data_diff < self.ignore_threshold:
@@ -433,7 +443,8 @@ class CtripCrawler():
                             __ignores.add((arr, dep))
                             break
                         elif data_diff < limits:
-                            print(f' WARN: few data in {arr}-{dep} ', end = collectDate.isoformat())
+                            print(f' WARN: few data in {arr}-{dep} ', 
+                                  end = collectDate.strftime('%m/%d'))
                             self.__warn += 1
 
                 collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
