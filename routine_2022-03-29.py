@@ -9,15 +9,15 @@ import pandas
 
 if __name__ == "__main__":
 
-    cities = ["BJS", "TSN", "SHE", "HRB", "CGQ", "SJW", 
+    cities = ["BJS", "TSN", "SHE", "HRB", "CGO", "SJW", 
               "SHA", "NKG", "HGH", "CZX", "WUX", "HFE", 
               "CAN", "SYX", "HAK", "SZX", "XMN", "CSX", 
               "CTU", "CKG", "KMG", "XIY", "LHW", "INC", 
-              "URC", "FOC", "TAO", "DLC", "WUH", "CGO", ]
+              "URC", "FOC", "TAO", "DLC", "WUH", "CGQ", ]
     flightDate = date(2022, 3, 29)
-    ignore_threshold = 3
+    ignore_threshold = 0
     airData = CivilAviation()
-    ignore_cities = None
+    ignore_cities = airData.skipped_routes
     
     parameters = (cities, flightDate, 45, 46, ignore_cities, ignore_threshold)
     
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         'date_flight', 'day_week', 'airline', 'type', 'dep', 
         'arr', 'time_dep', 'time_arr', 'price', 'price_rate')
     
-    for data in crawler.run(part = parse_args.part, parts = parse_args.parts):
+    for data in crawler.run(part = parse_args.part, parts = parse_args.parts, lessretry = {'CGQ'}):
         try:
             data = pandas.DataFrame(data, columns = header).assign(date_coll = date_coll)
             data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
