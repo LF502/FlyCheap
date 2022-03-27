@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
 from pathlib import Path
-from civilaviation import CivilAviation
+from civilaviation import Airport, Route
 
 class CtripCrawler():
     """
@@ -17,47 +17,64 @@ class CtripCrawler():
     Use `run` to process!
     """
 
-    def __init__(self, cityList: list, flightDate: date = date.today(), 
+    def __init__(self, targets: list[str | Airport | Route], flight_date: date = date.today(), 
                  days: int = 1, day_limit: int = 0, ignore_routes: set = None, 
                  ignore_threshold: int = 3,
                  with_return: bool = True, proxy: str | bool = None) -> None:
-        
-        self.__airData = CivilAviation()
         
         self.__dayOfWeek = {
             1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
         
         try:
-            self.__codesum = len(cityList)
+            self.__codesum = len(targets)
         except:
             self.exits(1) #exit for empty or incorrect data
         if self.__codesum <= 1:
             self.exits(2) #exit for no city tuple
 
-        self.cityList = cityList
-        self.flightDate = flightDate
-        self.first_date = flightDate.isoformat()
+        self.__cities = []
+        self.routes = []
+        for item in targets:
+            if isinstance(item, str):
+                self.__cities.append(Airport(item))
+            elif isinstance(item, Airport):
+                self.__cities.append(item)
+            elif isinstance(item, Route):
+                _return = item.returns
+                if not ((ignore_threshold >= 3 and item.islow()) or item.isinactive() or \
+                    item in ignore_routes or _return in ignore_routes or _return in self.routes):
+                    self.routes.append(item)
+        for dep in cities:
+            for arr in cities:
+                if not dep == arr:
+                    _oneway = Route(dep, arr)
+                    _return = Route(arr, dep)
+                    if not ((ignore_threshold >= 3 and _oneway.islow()) or _oneway.isinactive() or \
+                        _oneway in ignore_routes or _return in ignore_routes or _return in self.routes):
+                        self.routes.append(_oneway)
+        del self.__cities
+        self.routes: list[Route]
+        self.__limits = ignore_threshold if ignore_threshold else 1
+        
+        self.flight_date = flight_date
+        self.first_date = flight_date.isoformat()
 
         self.days = days
         self.day_limit = day_limit
 
-        self.ignore_routes = ignore_routes
-        self.ignore_threshold = ignore_threshold
-        self.with_return = with_return
-
         '''Day range preprocess'''
-        currDate = date.today().toordinal()
-        if currDate >= self.flightDate.toordinal():
+        curr_date = date.today().toordinal()
+        if curr_date >= self.flight_date.toordinal():
             # If collect day is behind today, change the beginning date and days of collect.
             self.ignore_threshold = 0
-            self.days -= currDate - self.flightDate.toordinal() + 1
-            self.flightDate = self.flightDate.fromordinal(currDate + 1)
+            self.days -= curr_date - self.flight_date.toordinal() + 1
+            self.flight_date = self.flight_date.fromordinal(curr_date + 1)
             if self.day_limit:   # If there's a limit for days in advance, change the days of collect.
                 if self.days > self.day_limit:
                     self.days = self.day_limit
         else:
             if self.day_limit:   # If there's a limit for days in advance, change the days of collect.
-                total = self.flightDate.toordinal() + self.days - currDate
+                total = self.flight_date.toordinal() + self.days - curr_date
                 if total > self.day_limit:
                     self.days -= total - self.day_limit
         if self.days <= 0:
@@ -70,6 +87,7 @@ class CtripCrawler():
         self.__warn = 0
         self.__idct = 0
         self.__avgTime = 2.9 if with_return else 1.3
+        self.with_return = with_return
 
         self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
         self.header = {"Content-Type": "application/json;charset=utf-8", 
@@ -154,38 +172,6 @@ class CtripCrawler():
             'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
         self.__lenAgents = len(self.__userAgents)
 
-    @property
-    def skips(self) -> set[tuple[str, str]]:
-        '''Ignore cities with few flights.
-        If two cities given are too close or not in analysis range, skip, 
-        by returning matrix routes in set. '''
-        if self.ignore_threshold >= 3:
-            ignores = self.__airData.routes_inactive | self.__airData.routes_low
-        elif self.ignore_threshold > 0:
-            ignores = self.__airData.routes_inactive
-        else:
-            ignores = set()
-        if self.ignore_routes is not None and isinstance(self.ignore_routes, set):
-            ignores |= self.ignore_routes
-        
-        skips = set()
-        for dep in self.cityList:
-            for arr in self.cityList[self.cityList.index(dep): ]:
-                # If the city tuple is the same or found in the set, do not process.
-                if dep == arr or (dep, arr) in ignores or (arr, dep) in ignores:
-                    skips.add((dep, arr))
-        return skips
-
-    @property
-    def routes(self) -> list[tuple[str, str]]:
-        '''Get matrix-like routes in list of tuple(dep city, arr city)'''
-        routes = []
-        for dep in self.cityList:
-            for arr in self.cityList[self.cityList.index(dep): ]:
-                if (dep, arr) not in self.skips:
-                    routes.append((dep, arr))
-        return routes
-
     @staticmethod
     def exits(__code: int = 0) -> None:
         '''Exit program with a massage'''
@@ -220,16 +206,17 @@ class CtripCrawler():
         return self.__userAgents[int(self.__lenAgents * random())]
 
 
-    def collector(self, flightDate: date, dcity: str, acity: str) -> list[list]:
+    def collector(self, flight_date: date, route: Route) -> list[list]:
         proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
         datarows = list()
-        departureName = dcityname = self.__airData.from_code(dcity)
-        arrivalName = acityname = self.__airData.from_code(acity)
+        dcity, acity = route.separates('iata')
+        departureName = dcityname = route.dep.city
+        arrivalName = acityname = route.arr.city
         header, payload = self.header, self.payload
-        dow = self.__dayOfWeek[flightDate.isoweekday()]
+        dow = self.__dayOfWeek[flight_date.isoweekday()]
         header["User-Agent"] = self.userAgent
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
-                                     "acityname": acityname, "date": flightDate.isoformat(),}]
+                                     "acityname": acityname, "date": flight_date.isoformat(),}]
 
         try:
             response = post(
@@ -245,8 +232,8 @@ class CtripCrawler():
         if routeList is None:   # No data, return empty and ignore these flights in the future.
             return datarows
 
-        d_multiairport = self.__airData.is_multiairport(dcity)
-        a_multiairport = self.__airData.is_multiairport(acity)
+        d_multiairport = route.dep.multi
+        a_multiairport = route.arr.multi
         for route in routeList:
             legs = route.get('legs')
             try:
@@ -258,8 +245,8 @@ class CtripCrawler():
                     airlineName = flight.get('airlineName')
                     if '旗下' in airlineName:   # Airline name should be as simple as possible
                         airlineName = airlineName.split('旗下', 1)[1]   # Convert time
-                    departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
-                    arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
+                    departureTime = time.fromisoformat(flight.get('departure_date').split(' ', 1)[1])
+                    arrivalTime = time.fromisoformat(flight.get('arrival_date').split(' ', 1)[1])
                     if d_multiairport:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportInfo').get('airportName')
                         departureName = dcityname + departureName.strip('成都')[:2]
@@ -276,10 +263,10 @@ class CtripCrawler():
                     price = ticket.get('price').get('price')
                     rate = ticket.get('price').get('rate')
                     datarows.append([
-                        flightDate, dow, airlineName, craftType, departureName, 
+                        flight_date, dow, airlineName, craftType, departureName, 
                         arrivalName, departureTime, arrivalTime, price, rate])
             except Exception as error:
-                print(' WARN:', error, f'in {dcity}-{acity} ', end = flightDate.isoformat())
+                print(' WARN:', error, f'in {dcity}-{acity} ', end = flight_date.isoformat())
                 self.__warn += 1
         return datarows
 
@@ -343,7 +330,7 @@ class CtripCrawler():
         
         with_output: `bool`, default: `True`
         
-        path: `Path` | `str`, default: `Path("First Flight Date" / "Current Date")`
+        path: `Path` | `str`, default: `Path("First Flight _date" / "Current _date")`
         
         values_only: `bool`, default: `False`
         
@@ -358,7 +345,6 @@ class CtripCrawler():
         '''
         filesum = 0
         __ignores = set()
-        limits = self.ignore_threshold if self.ignore_threshold else 1
 
         '''Initialize running parameters'''
         path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
@@ -373,9 +359,9 @@ class CtripCrawler():
         
         '''Part separates'''
         routes = []
-        for dep, arr in self.routes:
-            if not Path(path / f'{dep}~{arr}.xlsx').exists():
-                routes.append((dep, arr))
+        for route in self.routes:
+            if not Path(path / f'{route.dep.code}~{route.arr.code}.xlsx').exists():
+                routes.append(route)
         try:
             if part > 0 and parts > 1:
                 part_len = int(len(routes) / parts)
@@ -385,12 +371,13 @@ class CtripCrawler():
             self.__total = len(routes) * self.days
         
         '''Data collecting controller'''
-        for dep, arr in routes:
+        for route in routes:
+            dep, arr = route.separates('code')
             if Path(path / f'{dep}~{arr}.xlsx').exists():
                 print(f'{dep}-{arr} already collected, skip')
                 self.__total -= self.days
                 continue    # Already processed.
-            collectDate = self.flightDate   #reset
+            collect_date = self.flight_date   #reset
             datarows = []
             for i in range(self.days):
                 currTime = self.show_progress(dep, arr)
@@ -398,16 +385,16 @@ class CtripCrawler():
                 '''Get OUTbound flights data, 3 attempts for ample data'''
                 for j in range(3):
                     data_diff = len(datarows)
-                    datarows.extend(self.collector(collectDate, dep, arr))
+                    datarows.extend(self.collector(collect_date, route))
                     data_diff = len(datarows) - data_diff
-                    if data_diff >= limits:
+                    if data_diff >= self.__limits:
                         break
                     elif i != 0 and data_diff > 0:
                         break
                     elif j == 1:
                         if dep in lessretry or arr in lessretry:
                             print(f' ...few data in {dep}-{arr} ', 
-                                  end = collectDate.strftime('%m/%d'))
+                                  end = collect_date.strftime('%m/%d'))
                             break
                         print(' ...retry', end = '')
                 else:
@@ -416,24 +403,24 @@ class CtripCrawler():
                         print(f'\r{dep}-{arr} has {data_diff} flight(s), ignored. ')
                         __ignores.add((dep, arr))
                         break
-                    elif data_diff < limits:
+                    elif data_diff < self.__limits:
                         print(f' WARN: few data in {dep}-{arr} ', 
-                              end = collectDate.strftime('%m/%d'))
+                              end = collect_date.strftime('%m/%d'))
                         self.__warn += 1
 
                 '''Get INbound flights data, 3 attempts for ample data'''
                 if self.with_return:
                     for j in range(3):
                         data_diff = len(datarows)
-                        datarows.extend(self.collector(collectDate, arr, dep))
-                        if data_diff >= limits:
+                        datarows.extend(self.collector(collect_date, route))
+                        if data_diff >= self.__limits:
                             break
                         elif i != 0 and data_diff > 0:
                             break
                         elif j == 1:
                             if dep in lessretry or arr in lessretry:
                                 print(f' ...few data in {arr}-{dep} ', 
-                                      end = collectDate.strftime('%m/%d'))
+                                      end = collect_date.strftime('%m/%d'))
                                 break
                             print(' ...retry', end = '')
                     else:
@@ -442,12 +429,12 @@ class CtripCrawler():
                             print(f'\r{arr}-{dep} has {data_diff} flight(s), ignored. ')
                             __ignores.add((arr, dep))
                             break
-                        elif data_diff < limits:
+                        elif data_diff < self.__limits:
                             print(f' WARN: few data in {arr}-{dep} ', 
-                                  end = collectDate.strftime('%m/%d'))
+                                  end = collect_date.strftime('%m/%d'))
                             self.__warn += 1
 
-                collectDate = collectDate.fromordinal(collectDate.toordinal() + 1)  #one day forward
+                collect_date = collect_date.fromordinal(collect_date.toordinal() + 1)  #one day forward
                 self.__idct += 1
                 self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime \
                     * (self.__total - 1)) / self.__total
@@ -483,16 +470,13 @@ if __name__ == "__main__":
 
     # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
-    # 城市列表, 处理表中各城市对的航班 (第一天少于3个则忽略) , 分类有: 华北+东北、华东、西南、西北+新疆、中南
-    cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
-              'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
-              'CTU','CKG','KMG','JHG',
-              'URC','XIY','LHW','LXA',
-              'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
+    # 城市列表, 支持输入IATA/ICAO代码或城市名称；亦可输入 Route / Airport 类
+    cities = []
 
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
-    ignore_routes = {('BJS', 'LXA'), ('DLC', 'XIY')}
+    #忽略的航线，可用Route或tuple
+    ignore_routes = {}
 
     # 代理: 字符串 - 代理网址API / False - 禁用 / 不填 - 使用ProxyPool
     proxyurl = None
@@ -500,6 +484,6 @@ if __name__ == "__main__":
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数: 是否输出文件 (否: 生成列表) 、存储路径、是否带格式
-    crawler = CtripCrawler(cities, date(2022,2,17), 30, 0, ignore_routes, ignore_threshold, True, proxyurl)
+    crawler = CtripCrawler(cities, date.today(), 30, 0, ignore_routes, ignore_threshold, True)
     for data in crawler.run():
         pass
