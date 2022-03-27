@@ -1284,14 +1284,16 @@ class Rebuilder():
         wb.close()
     
     
-    def adv(self, limit: int = 14, path: Path | str = Path(), file: str = ''):
+    def adv(self, start: int = 0, end: int = 0, path: Path | str = Path(), file: str = ''):
         '''Calculate pearson correlation coefficient of tickets rate 
-        in `limit` days before departure date'''
+        in `start` ~ `end` days before departure date'''
         
         filterwarnings("ignore")
         if not len(self.__merge):
             self.__merge = self.merge()
-        data = self.__merge.drop(self.__merge[self.__merge['day_adv'] > limit].index)
+        data = self.__merge[self.__merge['day_adv'].isin(
+            tuple(range(start if start > 0 else 1, end if end > 0 else self.__merge['day_adv'].max()))
+        )].reset_index()
         
         wb = self.indexbook(airlines = True)
         rules = (
