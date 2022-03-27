@@ -412,7 +412,7 @@ class CtripCrawler():
                 if self.with_return:
                     for j in range(3):
                         data_diff = len(datarows)
-                        datarows.extend(self.collector(collect_date, route))
+                        datarows.extend(self.collector(collect_date, route.returns))
                         if data_diff >= self.__limits:
                             break
                         elif i != 0 and data_diff > 0:
