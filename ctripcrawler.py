@@ -17,10 +17,10 @@ class CtripCrawler():
     Use `run` to process!
     """
 
-    def __init__(self, targets: list[str | Airport | Route], flight_date: date = date.today(), 
-                 days: int = 1, day_limit: int = 0, ignore_routes: set = None, 
-                 ignore_threshold: int = 3,
-                 with_return: bool = True, proxy: str | bool = None) -> None:
+    def __init__(
+        self, targets: list[str | Airport | Route], flight_date: date = date.today(), 
+        days: int = 1, day_limit: int = 0, ignore_routes: set = None, ignore_threshold: int = 3, 
+        with_return: bool = True, proxy: str | bool | None = None) -> None:
         
         self.__dayOfWeek = {
             1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
@@ -99,7 +99,7 @@ class CtripCrawler():
                        "Referer": "https://flights.ctrip.com/international/search/domestic", }
         self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
 
-        if proxy == False:
+        if proxy is False:
             self.proxylist = False
         elif isinstance(proxy, str):
             try:
@@ -198,8 +198,9 @@ class CtripCrawler():
             return sleep(3 * random())
 
     @property
-    def proxy(self) -> dict:
-        return {"http": self.proxylist[int(len(self.proxylist) * random())]}
+    def proxy(self) -> dict | None:
+        return {"http": self.proxylist[int(len(self.proxylist) * random())]} \
+            if self.proxylist else None
 
     @property
     def userAgent(self) -> str:
@@ -208,7 +209,7 @@ class CtripCrawler():
 
 
     def collector(self, flight_date: date, route: Route) -> list[list]:
-        proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
+        proxy = None if self.proxylist is False else self.proxy if self.proxylist else self.proxypool
         datarows = list()
         dcity, acity = route.separates('code')
         departureName = dcityname = route.dep.city
@@ -233,8 +234,8 @@ class CtripCrawler():
         if routeList is None:   # No data, return empty and ignore these flights in the future.
             return datarows
 
-        for route in routeList:
-            legs = route.get('legs')
+        for routes in routeList:
+            legs = routes.get('legs')
             try:
                 if len(legs) == 1: # Flights that need to transfer is ignored.
                     #print(legs,end='\n\n')
@@ -244,8 +245,8 @@ class CtripCrawler():
                     airlineName = flight.get('airlineName')
                     if '旗下' in airlineName:   # Airline name should be as simple as possible
                         airlineName = airlineName.split('旗下', 1)[1]   # Convert time
-                    departureTime = time.fromisoformat(flight.get('departure_date').split(' ', 1)[1])
-                    arrivalTime = time.fromisoformat(flight.get('arrival_date').split(' ', 1)[1])
+                    departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
+                    arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
                     if route.dep.multi:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportInfo').get('airportName')
                         departureName = dcityname + departureName.strip('成都')[:2]
@@ -329,7 +330,7 @@ class CtripCrawler():
         
         with_output: `bool`, default: `True`
         
-        path: `Path` | `str`, default: `Path("First Flight _date" / "Current _date")`
+        path: `Path` | `str`, default: `Path("First Flight Date" / "Current Date")`
         
         values_only: `bool`, default: `False`
         
@@ -386,9 +387,7 @@ class CtripCrawler():
                     data_diff = len(datarows)
                     datarows.extend(self.collector(collect_date, route))
                     data_diff = len(datarows) - data_diff
-                    if data_diff >= self.__limits:
-                        break
-                    elif i != 0 and data_diff > 0:
+                    if data_diff >= self.__limits or (i != 0 and data_diff > 0):
                         break
                     elif j == 1:
                         if dep in lessretry or arr in lessretry:
@@ -412,9 +411,8 @@ class CtripCrawler():
                     for j in range(3):
                         data_diff = len(datarows)
                         datarows.extend(self.collector(collect_date, route.returns))
-                        if data_diff >= self.__limits:
-                            break
-                        elif i != 0 and data_diff > 0:
+                        data_diff = len(datarows) - data_diff
+                        if data_diff >= self.__limits or (i != 0 and data_diff > 0):
                             break
                         elif j == 1:
                             if dep in lessretry or arr in lessretry:
