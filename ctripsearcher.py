@@ -100,9 +100,9 @@ class CtripSearcher(CtripCrawler):
         if routeList is None:   # No data, return empty and ignore these flights in the future.
             return datarows
 
-        for route in routeList:
-            flightSegments = route.get('flightSegments')
-            priceList = route.get('priceList')
+        for routes in routeList:
+            flightSegments = routes.get('flightSegments')
+            priceList = routes.get('priceList')
             try:
                 if len(flightSegments) == 1:    # Flights that need to transfer is ignored.
                     flight = flightSegments[0].get('flightList')[0]
@@ -111,14 +111,14 @@ class CtripSearcher(CtripCrawler):
                     if flight.get('stopList') != [] or flight.get('stopList') is not None:
                         continue    # Flights with a stop not collected
                     airlineName = flight.get('marketAirlineName')
-                    departureTime = datetime.time().fromisoformat(flight.get('departure_dateTime').split(' ', 1)[1])
-                    arrivalTime = datetime.time().fromisoformat(flight.get('arrival_dateTime').split(' ', 1)[1])
-                    if dcity.multi:  # Multi-airport cities need the airport name while others do not
+                    departureTime = datetime.time().fromisoformat(flight.get('departureDateTime').split(' ', 1)[1])
+                    arrivalTime = datetime.time().fromisoformat(flight.get('arrivalDateTime').split(' ', 1)[1])
+                    if route.dep.multi:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportShortName')
                         departureName = dcityname + departureName[:2]
                     elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
                         departureName = flight.get('departureCityName')
-                    if acity.multi:
+                    if route.arr.multi:
                         arrivalName = flight.get('arrivalAirportShortName')
                         arrivalName = acityname + arrivalName[:2]
                     elif not arrivalName:
