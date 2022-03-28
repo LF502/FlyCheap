@@ -39,9 +39,8 @@ class CtripCrawler():
             elif isinstance(item, Airport):
                 cities.append(item)
             elif isinstance(item, Route):
-                _return = item.returns
                 if not ((ignore_threshold >= 3 and item.islow()) or item.isinactive() or \
-                    item in ignore_routes or _return in ignore_routes or _return in self.routes):
+                    item in ignore_routes or _return in ignore_routes):
                     self.routes.append(item)
         for dep in cities:
             for arr in cities:
@@ -325,23 +324,26 @@ class CtripCrawler():
         Output Parameters
         -----
         - Store data or generate list? 
+            - with_output: `bool`, default: `True`
         - Where to store? 
+            - path: `Path` | `str`, default: `Path("First Flight Date" / "Current Date")`
         - With format or not?
-        
-        with_output: `bool`, default: `True`
-        
-        path: `Path` | `str`, default: `Path("First Flight Date" / "Current Date")`
-        
-        values_only: `bool`, default: `False`
-        
+            - values_only: `bool`, default: `False`
         
         Collect Parameters
         -----
         - Parts of data collection, for multi-threading.
+            - parts: `int`, the total number of parts, default: `0`
+            - part: `int`, the index of the running part, default: `0`
+        - In case of city with few flights...
+            - attempt: `int`, the number of attempt to get ample data, default: `3`
+            - noretry: `list`, routes connecting the city has no retry, default: `list()`
         
-        parts: `int`, the total number of parts, default: 0
-        
-        part: `int`, the index of the running part, default: 0
+        File Detection Parameters
+        -----
+        - overwrite: `bool`, collect and overwrite existing files, default: `False`
+        - skipexist: `bool`, skip collect routes of existing files, default: `False`
+        - remainsep: `bool`, keep the orignal collect route without detection, default: `False`
         '''
         filesum = 0
         __ignores = set()
@@ -349,19 +351,26 @@ class CtripCrawler():
         '''Initialize running parameters'''
         path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
         if not isinstance(path, Path):
-            path = Path(str(path))
-        if not path.exists():
-            path.mkdir(parents = True, exist_ok = True)
+            path = Path(path)
+        path.mkdir(parents = True, exist_ok = True)
         values_only: bool = kwargs.get('values_only', False)
-        parts: int = kwargs.get('parts', 0)
-        part: int = kwargs.get('part', 0)
-        lessretry: set = kwargs.get('lessretry', set())
+        parts: int = kwargs.get('parts', 1)
+        part: int = kwargs.get('part', 1)
+        overwrite: bool = kwargs.get('overwrite', False)
+        noretry: list = kwargs.get('noretry', [])
+        attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
         
         '''Part separates'''
-        routes = []
-        for route in self.routes:
-            if not Path(path / f'{route.dep.code}~{route.arr.code}.xlsx').exists():
-                routes.append(route)
+        if overwrite or kwargs.get('remainsep'):
+            routes = self.routes
+        else:
+            routes = []
+            for route in self.routes:
+                exist = Path(path / f'{route.dep.code}~{route.arr.code}.xlsx').exists() or \
+                    Path(path / f'{route.arr.code}~{route.dep.code}.xlsx').exists() or \
+                    Path(path / f'{route.dep.code}-{route.arr.code}.xlsx').exists()
+                if not (exist and kwargs.get('skipexist')):
+                    routes.append(route)
         try:
             if part > 0 and parts > 1:
                 part_len = int(len(routes) / parts)
@@ -373,7 +382,10 @@ class CtripCrawler():
         '''Data collecting controller'''
         for route in routes:
             dep, arr = route.separates('code')
-            if Path(path / f'{dep}~{arr}.xlsx').exists():
+            exist = Path(path / f'{dep}~{arr}.xlsx').exists() or \
+                Path(path / f'{dep}-{arr}.xlsx').exists() or \
+                Path(path / f'{arr}~{dep}.xlsx').exists()
+            if not overwrite and exist:
                 print(f'{dep}-{arr} already collected, skip')
                 self.__total -= self.days
                 continue    # Already processed.
@@ -382,18 +394,18 @@ class CtripCrawler():
             for i in range(self.days):
                 currTime = self.show_progress(dep, arr)
 
-                '''Get OUTbound flights data, 3 attempts for ample data'''
-                for j in range(3):
+                '''Get OUTbound flights data, attempts for ample data'''
+                for j in range(attempt):
                     data_diff = len(datarows)
                     datarows.extend(self.collector(collect_date, route))
                     data_diff = len(datarows) - data_diff
                     if data_diff >= self.__limits or (i != 0 and data_diff > 0):
                         break
+                    elif dep in noretry or arr in noretry:
+                        print(f' ...few data in {dep}-{arr} ', 
+                                end = collect_date.strftime('%m/%d'))
+                        break
                     elif j == 1:
-                        if dep in lessretry or arr in lessretry:
-                            print(f' ...few data in {dep}-{arr} ', 
-                                  end = collect_date.strftime('%m/%d'))
-                            break
                         print(' ...retry', end = '')
                 else:
                     if i == 0 and data_diff < self.__threshold:
@@ -406,19 +418,19 @@ class CtripCrawler():
                               end = collect_date.strftime('%m/%d'))
                         self.__warn += 1
 
-                '''Get INbound flights data, 3 attempts for ample data'''
+                '''Get INbound flights data, attempts for ample data'''
                 if self.with_return:
-                    for j in range(3):
+                    for j in range(attempt):
                         data_diff = len(datarows)
                         datarows.extend(self.collector(collect_date, route.returns))
                         data_diff = len(datarows) - data_diff
                         if data_diff >= self.__limits or (i != 0 and data_diff > 0):
                             break
+                        elif dep in noretry or arr in noretry:
+                            print(f' ...few data in {arr}-{dep} ', 
+                                  end = collect_date.strftime('%m/%d'))
+                            break
                         elif j == 1:
-                            if dep in lessretry or arr in lessretry:
-                                print(f' ...few data in {arr}-{dep} ', 
-                                      end = collect_date.strftime('%m/%d'))
-                                break
                             print(' ...retry', end = '')
                     else:
                         if i == 0 and data_diff < self.__threshold:
