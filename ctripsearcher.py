@@ -68,7 +68,7 @@ class CtripSearcher(CtripCrawler):
 
     def collector(self, flight_date: datetime.date, route) -> list[list]:
         datarows = list()
-        dcity, acity = route.separates('iata')
+        dcity, acity = route.separates('code')
         departureName = dcityname = route.dep.city
         arrivalName = acityname = route.arr.city
         dow, date = self.__dayOfWeek[flight_date.isoweekday()], flight_date.isoformat()
@@ -100,8 +100,6 @@ class CtripSearcher(CtripCrawler):
         if routeList is None:   # No data, return empty and ignore these flights in the future.
             return datarows
 
-        d_multiairport = dcity.multi
-        a_multiairport = acity.multi
         for route in routeList:
             flightSegments = route.get('flightSegments')
             priceList = route.get('priceList')
@@ -115,12 +113,12 @@ class CtripSearcher(CtripCrawler):
                     airlineName = flight.get('marketAirlineName')
                     departureTime = datetime.time().fromisoformat(flight.get('departure_dateTime').split(' ', 1)[1])
                     arrivalTime = datetime.time().fromisoformat(flight.get('arrival_dateTime').split(' ', 1)[1])
-                    if d_multiairport:  # Multi-airport cities need the airport name while others do not
+                    if dcity.multi:  # Multi-airport cities need the airport name while others do not
                         departureName = flight.get('departureAirportShortName')
                         departureName = dcityname + departureName[:2]
                     elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
                         departureName = flight.get('departureCityName')
-                    if a_multiairport:
+                    if acity.multi:
                         arrivalName = flight.get('arrivalAirportShortName')
                         arrivalName = acityname + arrivalName[:2]
                     elif not arrivalName:
@@ -132,7 +130,7 @@ class CtripSearcher(CtripCrawler):
                     datarows.append([flight_date, dow, airlineName, craftType, departureName, arrivalName, 
                                      departureTime, arrivalTime, price, rate, ])
                     # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
-            except Exception as dataError:
-                print('\tWARN:', dataError, 'at', {flight_date.isoformat()}, end = '')
+            except Exception as error:
+                print(' WARN:', error, f'in {dcity}-{acity} ', end = flight_date.strftime('%m/%d'))
                 self.__warn += 1
         return datarows

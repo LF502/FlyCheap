@@ -1,7 +1,7 @@
 from ctripcrawler import CtripCrawler
 from ctripsearcher import CtripSearcher
 from rebuilder import Rebuilder
-from civilaviation import CivilAviation
+import civilaviation
 import sys
 import time
 
