@@ -1,5 +1,5 @@
 from ctripcrawler import CtripCrawler
-from civilaviation import CivilAviation
+from civilaviation import skipped_routes, Airport
 from datetime import date
 from __init__ import Log
 from argparse import ArgumentParser
@@ -9,20 +9,19 @@ import pandas
 
 if __name__ == "__main__":
     
-    cities = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
+    targets = ['BJS','HRB','HLD','TSN','DLC','TAO','CGO',
               'SHA','NKG','HGH','CZX','WUX','FOC','XMN','JJN',
               'CTU','CKG','KMG','JHG',
               'URC','XIY','LHW','LXA',
               'WUH','CAN','ZHA','SZX','SWA','HAK','SYX',]
-    flightDate = date(2022, 2, 17)
+    flight_date = date(2022, 2, 17)
     ignore_threshold = 0
-    airData = CivilAviation()
-    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')} | airData.skipped_routes
+    ignore_cities = {('BJS', 'ZHA'), ('BJS', 'LXA'), ('DLC', 'XIY')} | skipped_routes
     
-    parameters = (cities, flightDate, 30, 0, ignore_cities, ignore_threshold)
+    parameters = (targets, flight_date, 30, 0, ignore_cities, ignore_threshold)
     crawler = CtripCrawler(*parameters)
     
-    sys.stdout = Log(f"{flightDate.isoformat()}_{date.today().isoformat()}.log")
+    sys.stdout = Log(f"{flight_date.isoformat()}_{date.today().isoformat()}.log")
     
     parser = ArgumentParser(description = "Input separations - by the number of part and total parts")
     parser.add_argument("--part", type = int, default = 0)
@@ -30,7 +29,7 @@ if __name__ == "__main__":
     parse_args = parser.parse_args()
     
     date_coll = pandas.Timestamp.today().date()
-    name = f'{flightDate.isoformat()}_{date_coll.isoformat()}_{parse_args.part}_{parse_args.parts}'
+    name = f'{flight_date.isoformat()}_{date_coll.isoformat()}_{parse_args.part}_{parse_args.parts}'
     file = Path('merging_' + name + '.csv')
     date_coll = date_coll.toordinal()
     frame = []
@@ -44,12 +43,7 @@ if __name__ == "__main__":
             data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
             data['day_adv'] = data['date_flight'] - date_coll
             data['hour_dep'] = data['time_dep'].map(lambda x: x.hour if x.hour else 24)
-            if airData.is_multiairport(crawler.file.name[:3]) or \
-                airData.is_multiairport(crawler.file.name[4:7]):
-                data['route'] = data['dep'].map(lambda x: airData.from_name(x)) + \
-                    '-' + data['arr'].map(lambda x: airData.from_name(x))
-            else:
-                data['route'] = data['dep'] + '-' + data['arr']
+            data['route'] = data['dep'].map(Airport) + data['arr'].map(Airport)
             if file.exists():
                 data.to_csv(file, mode = 'a', index = False, header = False)
             else:
