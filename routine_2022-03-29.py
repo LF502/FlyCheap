@@ -23,13 +23,18 @@ if __name__ == "__main__":
     sys.stdout = Log(f"{flight_date.isoformat()}_{date.today().isoformat()}.log")
     crawler = CtripCrawler(*parameters)
     
-    parser = ArgumentParser(description = "Input separations - by the number of part and total parts")
-    parser.add_argument("--part", type = int, default = 0)
-    parser.add_argument("--parts", type = int, default = 0)
-    parse_args = parser.parse_args()
+    parser = ArgumentParser()
+    parser.add_argument("--part", type = int, default = 1)
+    parser.add_argument("--parts", type = int, default = 1)
+    parser.add_argument("--attempt", type = int, default = 3)
+    parser.add_argument("-overwrite", action = 'store_true')
+    parser.add_argument("-skipexist", action = 'store_true')
+    parser.add_argument("-remainsep", action = 'store_true')
+    parser.add_argument("--noretry", type = str, action = 'append', default = [])
+    kwargs = vars(parser.parse_args())
     
     date_coll = pandas.Timestamp.today().date()
-    name = f'{flight_date.isoformat()}_{date_coll.isoformat()}_{parse_args.part}_{parse_args.parts}'
+    name = f"{flight_date.isoformat()}_{date_coll.isoformat()}_{kwargs['part']}_{kwargs['parts']}"
     file = Path('merging_' + name + '.csv')
     date_coll = date_coll.toordinal()
     frame = []
@@ -37,7 +42,7 @@ if __name__ == "__main__":
         'date_flight', 'day_week', 'airline', 'type', 'dep', 
         'arr', 'time_dep', 'time_arr', 'price', 'price_rate')
     
-    for data in crawler.run(part = parse_args.part, parts = parse_args.parts, lessretry = {'CGQ'}):
+    for data in crawler.run(**kwargs):
         try:
             data = pandas.DataFrame(data, columns = header).assign(date_coll = date_coll)
             data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
