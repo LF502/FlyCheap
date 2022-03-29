@@ -36,6 +36,7 @@ class Airport:
                 __str = _city.get(__str)
             elif _icao.get(__str):
                 __str = _icao.get(__str)
+            __str = __str.upper()
             if __str in _iata.keys():
                 self.iata = __str
                 self.icao, self.city, self.airport, self.city_eng, self.airport_eng, \
