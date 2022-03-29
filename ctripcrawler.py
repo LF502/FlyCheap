@@ -1,4 +1,4 @@
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from time import sleep
 from requests import get, post
 from json import dumps, loads
@@ -18,18 +18,22 @@ class CtripCrawler():
     """
 
     def __init__(
-        self, targets: list[str | Airport | Route], flight_date: date = date.today(), 
-        days: int = 1, day_limit: int = 0, ignore_routes: set = None, ignore_threshold: int = 3, 
+        self, targets: list[str | Airport | Route], flight_date: date = date.today() + timedelta(1), 
+        days: int = 1, day_limit: int = 0, ignore_routes: set = set(), ignore_threshold: int = 3, 
         with_return: bool = True, proxy: str | bool | None = None) -> None:
         
         self.__dayOfWeek = {
             1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
         
         try:
-            self.__codesum = len(targets)
+            __len = len(targets)
+            for item in targets:
+                if not (isinstance(item, Airport) or
+                        isinstance(item, Route) or isinstance(item, str)):
+                    raise
         except:
             self.exits(1) #exit for empty or incorrect data
-        if self.__codesum <= 1:
+        if __len < 1:
             self.exits(2) #exit for no city tuple
 
         self.routes, cities = [], []
@@ -40,7 +44,7 @@ class CtripCrawler():
                 cities.append(item)
             elif isinstance(item, Route):
                 if not ((ignore_threshold >= 3 and item.islow()) or item.isinactive() or \
-                    item in ignore_routes or _return in ignore_routes):
+                    item in ignore_routes or item.returns in ignore_routes):
                     self.routes.append(item)
         for dep in cities:
             for arr in cities:
@@ -61,30 +65,29 @@ class CtripCrawler():
         self.day_limit = day_limit
 
         '''Day range preprocess'''
-        curr_date = date.today().toordinal()
-        if curr_date >= self.flight_date.toordinal():
+        curr_date = date.today()
+        if curr_date >= self.flight_date:
             # If collect day is behind today, change the beginning date and days of collect.
             self.__threshold = 0
-            self.days -= curr_date - self.flight_date.toordinal() + 1
-            self.flight_date = self.flight_date.fromordinal(curr_date + 1)
-            if self.day_limit:   # If there's a limit for days in advance, change the days of collect.
-                if self.days > self.day_limit:
-                    self.days = self.day_limit
+            self.days -= (curr_date - self.flight_date).days + 1
+            self.flight_date = curr_date + timedelta(1)
+            if self.day_limit and self.days > self.day_limit:
+                # If there's a limit for days in advance, change the days of collect.
+                self.days = self.day_limit
         else:
             self.__threshold = ignore_threshold
-            if self.day_limit:   # If there's a limit for days in advance, change the days of collect.
-                total = self.flight_date.toordinal() + self.days - curr_date
-                if total > self.day_limit:
-                    self.days -= total - self.day_limit
+            total = (self.flight_date - curr_date).days + self.days
+            if self.day_limit and total > self.day_limit:
+                # If there's a limit for days in advance, change the days of collect.
+                self.days -= total - self.day_limit
         if self.days <= 0:
             self.exits(3) #exit for day limit error
-        self.__total = self.__codesum * (self.__codesum + 1) * self.days / 2
+        self.__total = __len * (__len + 1) * self.days / 2
 
         if self.__total == 0:
             self.exits(4)   #exit for ignored
 
-        self.__warn = 0
-        self.__idct = 0
+        self.__warn = self.__idct = 0
         self.__avgTime = 2.9 if with_return else 1.3
         self.with_return = with_return
         self.__limits = self.__threshold if self.__threshold else 1
@@ -217,12 +220,12 @@ class CtripCrawler():
         dow = self.__dayOfWeek[flight_date.isoweekday()]
         header["User-Agent"] = self.userAgent
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
-                                     "acityname": acityname, "date": flight_date.isoformat(),}]
+                                     "acityname": acityname, "date": flight_date.isoformat()}]
 
         try:
             response = post(
                 self.url, data = dumps(payload), headers = header, proxies = proxy, timeout = 10)
-            routeList = loads(response.text).get('data').get('routeList')   # -> list
+            routeList = loads(response.text).get('data').get('routeList')
         except:
             try:
                 response.close
@@ -230,7 +233,8 @@ class CtripCrawler():
                 return datarows
         response.close
         #print(routeList)
-        if routeList is None:   # No data, return empty and ignore these flights in the future.
+        if routeList is None:
+            # No data or version error (anti web crawler, etc)
             return datarows
 
         for routes in routeList:
@@ -335,15 +339,16 @@ class CtripCrawler():
         - Parts of data collection, for multi-threading.
             - parts: `int`, the total number of parts, default: `0`
             - part: `int`, the index of the running part, default: `0`
+            - reverse: `bool`, reverse collecting order, default: `False`
         - In case of city with few flights...
             - attempt: `int`, the number of attempt to get ample data, default: `3`
+            - antiempty: `int`, skip output few flights in the last flight days , default: `0`
             - noretry: `list`, routes connecting the city has no retry, default: `list()`
         
         File Detection Parameters
         -----
         - overwrite: `bool`, collect and overwrite existing files, default: `False`
-        - skipexist: `bool`, skip collect routes of existing files, default: `False`
-        - remainsep: `bool`, keep the orignal collect route without detection, default: `False`
+        - nopreskip: `bool`, keep the orignal collect route without detection, default: `False`
         '''
         filesum = 0
         __ignores = set()
@@ -359,9 +364,10 @@ class CtripCrawler():
         overwrite: bool = kwargs.get('overwrite', False)
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
+        antiempty: int = kwargs.get('antiempty') if kwargs.get('antiempty', 0) > 1 else 0
         
         '''Part separates'''
-        if overwrite or kwargs.get('remainsep'):
+        if overwrite or kwargs.get('nopreskip'):
             routes = self.routes
         else:
             routes = []
@@ -369,7 +375,7 @@ class CtripCrawler():
                 exist = Path(path / f'{route.dep.code}~{route.arr.code}.xlsx').exists() or \
                     Path(path / f'{route.arr.code}~{route.dep.code}.xlsx').exists() or \
                     Path(path / f'{route.dep.code}-{route.arr.code}.xlsx').exists()
-                if not (exist and kwargs.get('skipexist')):
+                if not exist:
                     routes.append(route)
         try:
             if part > 0 and parts > 1:
@@ -377,6 +383,8 @@ class CtripCrawler():
                 routes = routes[(parts - 1) * part_len : ] if part >= parts \
                     else routes[(part - 1) * part_len : part * part_len]
         finally:
+            if kwargs.get('reverse'):
+                routes.reverse()
             self.__total = len(routes) * self.days
         
         '''Data collecting controller'''
@@ -389,10 +397,10 @@ class CtripCrawler():
                 print(f'{dep}-{arr} already collected, skip')
                 self.__total -= self.days
                 continue    # Already processed.
-            collect_date = self.flight_date   #reset
+            collect_date = last_date = self.flight_date   #reset
             datarows = []
             for i in range(self.days):
-                currTime = self.show_progress(dep, arr)
+                curr = self.show_progress(dep, arr)
 
                 '''Get OUTbound flights data, attempts for ample data'''
                 for j in range(attempt):
@@ -400,6 +408,7 @@ class CtripCrawler():
                     datarows.extend(self.collector(collect_date, route))
                     data_diff = len(datarows) - data_diff
                     if data_diff >= self.__limits or (i != 0 and data_diff > 0):
+                        last_date = collect_date
                         break
                     elif dep in noretry or arr in noretry:
                         print(f' ...few data in {dep}-{arr} ', 
@@ -425,6 +434,7 @@ class CtripCrawler():
                         datarows.extend(self.collector(collect_date, route.returns))
                         data_diff = len(datarows) - data_diff
                         if data_diff >= self.__limits or (i != 0 and data_diff > 0):
+                            last_date = collect_date
                             break
                         elif dep in noretry or arr in noretry:
                             print(f' ...few data in {arr}-{dep} ', 
@@ -443,22 +453,25 @@ class CtripCrawler():
                                   end = collect_date.strftime('%m/%d'))
                             self.__warn += 1
 
-                collect_date = collect_date.fromordinal(collect_date.toordinal() + 1)  #one day forward
+                collect_date += timedelta(1)  #one day forward
                 self.__idct += 1
-                self.__avgTime = (datetime.now().timestamp() - currTime + self.__avgTime \
+                self.__avgTime = (datetime.now().timestamp() - curr + self.__avgTime \
                     * (self.__total - 1)) / self.__total
             else:
-                if len(datarows) and with_output:
+                antiflag = last_date + timedelta(antiempty + 1) >= collect_date if antiempty else True
+                msg = f'\r{dep}-{arr} '
+                if len(datarows) and with_output and antiflag:
                     self.file = self.output_excel(datarows, dep, arr, path, values_only, self.with_return)
-                    if values_only:
-                        print(f'\r{dep}-{arr} collected!               ')
-                    else:
-                        print(f'\r{dep}-{arr} collected and formatted! ')
+                    print(msg + 'collected' + ('!               ' if values_only else ' and formatted! '))
                     filesum += 1
-                elif len(datarows):
-                    print(f'\r{dep}-{arr} generated!               ')
+                elif len(datarows) and antiflag:
+                    print(msg + 'generated!               ')
+                elif len(datarows) and not antiflag:
+                    print(msg + 'WARN: output disabled!   ')
+                    self.__warn += 1
+                    continue
                 else:
-                    print(f'\r{dep}-{arr} WARN: no data!           ')
+                    print(msg + 'WARN: no data!           ')
                     self.__warn += 1
                     continue
                 yield datarows
