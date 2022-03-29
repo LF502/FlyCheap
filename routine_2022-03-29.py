@@ -27,9 +27,10 @@ if __name__ == "__main__":
     parser.add_argument("--part", type = int, default = 1)
     parser.add_argument("--parts", type = int, default = 1)
     parser.add_argument("--attempt", type = int, default = 3)
+    parser.add_argument("-reverse", action = 'store_true')
     parser.add_argument("-overwrite", action = 'store_true')
-    parser.add_argument("-skipexist", action = 'store_true')
-    parser.add_argument("-remainsep", action = 'store_true')
+    parser.add_argument("-nopreskip", action = 'store_true')
+    parser.add_argument("--antiempty", type = int, default = 0)
     parser.add_argument("--noretry", type = str, action = 'append', default = [])
     kwargs = vars(parser.parse_args())
     
