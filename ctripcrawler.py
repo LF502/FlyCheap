@@ -214,7 +214,7 @@ class CtripCrawler():
             "dcity": 'HGH', "acity": 'CKG', "dcityname": '杭州', "acityname": '重庆', 
             "date": (date.today() + timedelta(30)).isoformat()}]
         i = version = code = 0
-        while i < restart or restart == 0:
+        while i <= restart or restart == 0:
             i += 1
             try:
                 response = post(
@@ -231,7 +231,7 @@ class CtripCrawler():
                     response.close()
                 finally:
                     print(code if code else None, error, end = " at ")
-            print(f"{datetime.now().strftime('%H:%M:%S')}, retry in 60s...")
+            print(datetime.now().strftime('%H:%M:%S'))
             sleep(pause)
         return version
 
