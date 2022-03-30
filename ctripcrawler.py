@@ -84,9 +84,6 @@ class CtripCrawler():
             self.exits(3) #exit for day limit error
         self.__total = __len * (__len + 1) * self.days / 2
 
-        if self.__total == 0:
-            self.exits(4)   #exit for ignored
-
         self.__warn = self.__idct = 0
         self.__avgTime = 2.9 if with_return else 1.3
         self.with_return = with_return
@@ -102,7 +99,7 @@ class CtripCrawler():
         self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
 
         if proxy is False:
-            self.proxylist = False
+            self.__proxy == False
         elif isinstance(proxy, str):
             try:
                 with get(proxy) as proxy:
@@ -110,10 +107,11 @@ class CtripCrawler():
                 self.proxylist = []
                 for item in proxy:
                     self.proxylist.append(f"http://{item.get('ip')}:{item.get('port')}")
+                self.__proxy = 'proxy' if len(self.proxylist) else 'proxypool'
             except:
-                self.proxylist = None
+                self.__proxy = 'proxypool'
         else:
-            self.proxylist = None
+            self.__proxy = 'proxypool'
     
         self.__userAgents = (
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
@@ -180,38 +178,65 @@ class CtripCrawler():
         '''Exit program with a massage'''
         import sys
         error_code = {0: 'reaching exit point', 1: 'empty or incorrect data', 
-                      2: 'city tuple error',3:'day limit error', 4: 'no flight'}
+                      2: 'city tuple error', 3:'day limit error', 4: 'API unavailable'}
         print(f' Exited for {error_code[__code]}')
         sys.exit()
 
-    @property
-    def proxypool(self) -> dict | None:
-        '''Get a random proxy from Proxy Pool'''
-        for _ in range(3):
-            try:
-                with get('http://127.0.0.1:5555/random', timeout = 3) as proxy:
-                    proxy = proxy.text.strip()
+    def proxy(self) -> dict | None:
+        '''Get a random proxy from either proxylist or proxypool'''
+        if self.__proxy == 'proxy':
+            return {"http": self.proxylist[int(len(self.proxylist) * random())]}
+        elif self.__proxy == 'proxypool':
+            for _ in range(3):
+                try:
+                    with get('http://127.0.0.1:5555/random', timeout = 3) as proxy:
+                        proxy = proxy.text.strip()
                     if len(proxy):
                         return {"http": "http://" + proxy}
-            except:
-                continue
+                except:
+                    continue
+            else:
+                print(' ERROR: no proxy', end = '')
+                return sleep(3 * random())
         else:
-            print(' WARN: no proxy', end = '')
-            return sleep(3 * random())
-
-    @property
-    def proxy(self) -> dict | None:
-        return {"http": self.proxylist[int(len(self.proxylist) * random())]} \
-            if self.proxylist else None
+            return None
 
     @property
     def userAgent(self) -> str:
         '''Get a random User Agent'''
         return self.__userAgents[int(self.__lenAgents * random())]
 
+    def check(self, pause: int = 60, restart = 0) -> bool:
+        '''Check whether the API is available'''
+        header, payload = self.header, self.payload
+        header["User-Agent"] = self.userAgent
+        payload["airportParams"] = [{
+            "dcity": 'HGH', "acity": 'CKG', "dcityname": '杭州', "acityname": '重庆', 
+            "date": (date.today() + timedelta(30)).isoformat()}]
+        i = version = code = 0
+        while i < restart or restart == 0:
+            i += 1
+            try:
+                response = post(
+                    self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
+                code = response.status_code
+                version = (loads(response.text).get('data').get('version') == 'V2')
+                response.close()
+                if version:
+                    break
+                else:
+                    print("Version error", end = " at ")
+            except Exception as error:
+                try:
+                    response.close()
+                finally:
+                    print(code if code else None, error, end = " at ")
+            print(f"{datetime.now().strftime('%H:%M:%S')}, retry in 60s...")
+            sleep(pause)
+        return version
 
     def collector(self, flight_date: date, route: Route) -> list[list]:
-        proxy = None if self.proxylist is False else self.proxy if self.proxylist else self.proxypool
+        '''Web crawler main'''
         datarows = list()
         dcity, acity = route.separates('code')
         departureName = dcityname = route.dep.city
@@ -224,14 +249,14 @@ class CtripCrawler():
 
         try:
             response = post(
-                self.url, data = dumps(payload), headers = header, proxies = proxy, timeout = 10)
+                self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
             routeList = loads(response.text).get('data').get('routeList')
         except:
             try:
-                response.close
+                response.close()
             finally:
                 return datarows
-        response.close
+        response.close()
         #print(routeList)
         if routeList is None:
             # No data or version error (anti web crawler, etc)
@@ -352,7 +377,6 @@ class CtripCrawler():
         '''
         filesum = 0
         __ignores = set()
-
         '''Initialize running parameters'''
         path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
         if not isinstance(path, Path):
@@ -365,7 +389,10 @@ class CtripCrawler():
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
         antiempty: int = kwargs.get('antiempty') if kwargs.get('antiempty', 0) > 1 else 0
-        
+
+        if not self.check(1, attempt):
+            self.exits(4)
+
         '''Part separates'''
         if overwrite or kwargs.get('nopreskip'):
             routes = self.routes
@@ -468,10 +495,12 @@ class CtripCrawler():
                     print(msg + 'generated!               ')
                 elif len(datarows) and not antiflag:
                     print(msg + 'WARN: output disabled!   ')
+                    self.check()
                     self.__warn += 1
                     continue
                 else:
                     print(msg + 'WARN: no data!           ')
+                    self.check()
                     self.__warn += 1
                     continue
                 yield datarows
