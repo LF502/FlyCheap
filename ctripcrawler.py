@@ -2,8 +2,8 @@ from datetime import datetime, date, time, timedelta
 from time import sleep
 from requests import get, post
 from json import dumps, loads
-from random import random
-from typing import Generator
+from random import random, choice
+from typing import Generator, Literal
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
@@ -17,103 +17,17 @@ class CtripCrawler():
     Use `run` to process!
     """
 
-    def __init__(
-        self, targets: list[str | Airport | Route], flight_date: date = date.today() + timedelta(1), 
-        days: int = 1, day_limit: int = 0, ignore_routes: set = set(), ignore_threshold: int = 3, 
-        with_return: bool = True, proxy: str | bool | None = None) -> None:
-        
-        self.__dayOfWeek = {
-            1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
-        
-        try:
-            __len = len(targets)
-            for item in targets:
-                if not (isinstance(item, Airport) or
-                        isinstance(item, Route) or isinstance(item, str)):
-                    raise
-        except:
-            self.exits(1) #exit for empty or incorrect data
-        if __len < 1:
-            self.exits(2) #exit for no city tuple
-
-        self.routes, cities = [], []
-        for item in targets:
-            if isinstance(item, str):
-                cities.append(Airport(item))
-            elif isinstance(item, Airport):
-                cities.append(item)
-            elif isinstance(item, Route):
-                if not ((ignore_threshold >= 3 and item.islow()) or item.isinactive() or \
-                    item in ignore_routes or item.returns in ignore_routes):
-                    self.routes.append(item)
-        for dep in cities:
-            for arr in cities:
-                if not dep == arr:
-                    _oneway = Route(dep, arr)
-                    _return = Route(arr, dep)
-                    if not ((ignore_threshold >= 3 and _oneway.islow()) or _oneway.isinactive() or \
-                        _oneway.separates('code') in ignore_routes or _return in self.routes or \
-                        _return.separates('code') in ignore_routes):
-                        self.routes.append(_oneway)
-        del cities
-        self.routes: list[Route]
-        
-        self.flight_date = flight_date
-        self.first_date = flight_date.isoformat()
-
-        self.days = days
-        self.day_limit = day_limit
-
-        '''Day range preprocess'''
-        curr_date = date.today()
-        if curr_date >= self.flight_date:
-            # If collect day is behind today, change the beginning date and days of collect.
-            self.__threshold = 0
-            self.days -= (curr_date - self.flight_date).days + 1
-            self.flight_date = curr_date + timedelta(1)
-            if self.day_limit and self.days > self.day_limit:
-                # If there's a limit for days in advance, change the days of collect.
-                self.days = self.day_limit
-        else:
-            self.__threshold = ignore_threshold
-            total = (self.flight_date - curr_date).days + self.days
-            if self.day_limit and total > self.day_limit:
-                # If there's a limit for days in advance, change the days of collect.
-                self.days -= total - self.day_limit
-        if self.days <= 0:
-            self.exits(3) #exit for day limit error
-        self.__total = __len * (__len + 1) * self.days / 2
-
-        self.__warn = self.__idct = 0
-        self.__avgTime = 2.9 if with_return else 1.3
-        self.with_return = with_return
-        self.__limits = self.__threshold if self.__threshold else 1
-
-        self.url = "https://flights.ctrip.com/itinerary/api/12808/products"
-        self.header = {"Content-Type": "application/json;charset=utf-8", 
-                       "Accept": "application/json", 
-                       "Accept-Language": "zh-cn", 
-                       "Origin": "https://flights.ctrip.com", 
-                       "Host": "flights.ctrip.com", 
-                       "Referer": "https://flights.ctrip.com/international/search/domestic", }
-        self.payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
-
-        if proxy is False:
-            self.__proxy == False
-        elif isinstance(proxy, str):
-            try:
-                with get(proxy) as proxy:
-                    proxy = proxy.json().get("data")
-                self.proxylist = []
-                for item in proxy:
-                    self.proxylist.append(f"http://{item.get('ip')}:{item.get('port')}")
-                self.__proxy = 'proxy' if len(self.proxylist) else 'proxypool'
-            except:
-                self.__proxy = 'proxypool'
-        else:
-            self.__proxy = 'proxypool'
-    
-        self.__userAgents = (
+    url = "https://flights.ctrip.com/itinerary/api/12808/products"
+    header = {
+        "Content-Type": "application/json;charset=utf-8", 
+        "Accept": "application/json", 
+        "Accept-Language": "zh-cn", 
+        "Host": "flights.ctrip.com", 
+        "Origin": "https://flights.ctrip.com", 
+        "Referer": "https://flights.ctrip.com/international/search/domestic", }
+    payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
+    dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
+    userAgents = [
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Safari/605.1.15',
@@ -170,23 +84,88 @@ class CtripCrawler():
             'Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0',
             'Mozilla/5.0 (X11; Linux x86_64; rv:94.0) Gecko/20100101 Firefox/94.0',
             'Mozilla/5.0 (X11; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0',)
-        self.__lenAgents = len(self.__userAgents)
+            'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0']
 
-    @staticmethod
-    def exits(__code: int = 0) -> None:
-        '''Exit program with a massage'''
-        import sys
-        error_code = {0: 'reaching exit point', 1: 'empty or incorrect data', 
-                      2: 'city tuple error', 3:'day limit error', 4: 'API unavailable'}
-        print(f' Exited for {error_code[__code]}')
-        sys.exit()
+    def __init__(
+        self, targets: list[str | Airport | Route], flight_date: date = date.today() + timedelta(1), 
+        days: int = 1, day_limit: int = 0, ignore_routes: set = set(), ignore_threshold: int = 3, 
+        with_return: bool = True, proxy: str | bool | None = None) -> None:
 
-    def proxy(self) -> dict | None:
+        self.routes, cities = [], []
+        for item in targets:
+            if isinstance(item, str):
+                cities.append(Airport(item))
+            elif isinstance(item, Airport):
+                cities.append(item)
+            elif isinstance(item, Route):
+                if not ((ignore_threshold >= 3 and item.islow()) or item.isinactive() or \
+                    item in ignore_routes or item.returns in ignore_routes):
+                    self.routes.append(item)
+            else:
+                raise TypeError('Support city inputs: String(ICAO, IATA, City name), Airport, Route')
+        for dep in cities:
+            for arr in cities:
+                if not dep == arr:
+                    _oneway = Route(dep, arr)
+                    _return = Route(arr, dep)
+                    if not ((ignore_threshold >= 3 and _oneway.islow()) or _oneway.isinactive() or \
+                        _oneway.separates('code') in ignore_routes or _return in self.routes or \
+                        _return.separates('code') in ignore_routes):
+                        self.routes.append(_oneway)
+        del cities
+        self.routes: list[Route]
+        self.total = len(self.routes)
+        if not self.total:
+            raise IndexError('No valid routes!')
+
+        self.days = days
+        self.flight_date, self.first_date = flight_date, flight_date.isoformat()
+
+        '''Day range preprocess'''
+        curr_date = date.today()
+        if curr_date >= self.flight_date:
+            # If collect day is behind today, change the beginning date and days of collect.
+            self.__threshold = 0
+            self.days -= (curr_date - self.flight_date).days + 1
+            self.flight_date = curr_date + timedelta(1)
+            if day_limit > 0 and self.days > day_limit:
+                # If there's a limit for days in advance, change the days of collect.
+                self.days = day_limit
+        else:
+            self.__threshold = ignore_threshold
+            total = (self.flight_date - curr_date).days + self.days
+            if day_limit > 0 and total > day_limit:
+                # If there's a limit for days in advance, change the days of collect.
+                self.days -= total - day_limit
+        if self.days < 0:
+            raise ValueError(f'{curr_date} + {self.days} days exceeds {flight_date}')
+
+        self.__warn = self.__idct = 0
+        self.__avgTime = 2.9 if with_return else 1.3
+        self.with_return = with_return
+        self.__limits = self.__threshold if self.__threshold else 1
+        self.flag = (200, 'V2')
+
+        if proxy is False:
+            self.__proxy == False
+        elif isinstance(proxy, str):
+            try:
+                with get(proxy) as proxy:
+                    proxy = proxy.json().get("data")
+                self.proxylist = []
+                for item in proxy:
+                    self.proxylist.append(f"http://{item.get('ip')}:{item.get('port')}")
+                self.__proxy = 'proxy' if len(self.proxylist) else 'proxypool'
+            except:
+                self.__proxy = 'proxypool'
+        else:
+            self.__proxy = 'proxypool'
+
+    def proxy(self, key: Literal['proxy', 'proxypool'] = None) -> dict | None:
         '''Get a random proxy from either proxylist or proxypool'''
-        if self.__proxy == 'proxy':
-            return {"http": self.proxylist[int(len(self.proxylist) * random())]}
-        elif self.__proxy == 'proxypool':
+        if self.__proxy == 'proxy' or key == 'proxy':
+            return {"http": choice(self.proxylist)}
+        elif self.__proxy == 'proxypool' or key == 'proxypool':
             for _ in range(3):
                 try:
                     with get('http://127.0.0.1:5555/random', timeout = 3) as proxy:
@@ -201,40 +180,6 @@ class CtripCrawler():
         else:
             return None
 
-    @property
-    def userAgent(self) -> str:
-        '''Get a random User Agent'''
-        return self.__userAgents[int(self.__lenAgents * random())]
-
-    def check(self, pause: int = 60, restart = 0) -> bool:
-        '''Check whether the API is available'''
-        header, payload = self.header, self.payload
-        header["User-Agent"] = self.userAgent
-        payload["airportParams"] = [{
-            "dcity": 'HGH', "acity": 'CKG', "dcityname": '杭州', "acityname": '重庆', 
-            "date": (date.today() + timedelta(30)).isoformat()}]
-        i = version = code = 0
-        while i <= restart or restart == 0:
-            i += 1
-            try:
-                response = post(
-                    self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
-                code = response.status_code
-                version = (loads(response.text).get('data').get('version') == 'V2')
-                response.close()
-                if version:
-                    break
-                else:
-                    print("Version error", end = " at ")
-            except Exception as error:
-                try:
-                    response.close()
-                finally:
-                    print(code if code else None, error, end = " at ")
-            print(datetime.now().strftime('%H:%M:%S'))
-            sleep(pause)
-        return version
-
     def collector(self, flight_date: date, route: Route) -> list[list]:
         '''Web crawler main'''
         datarows = list()
@@ -242,16 +187,21 @@ class CtripCrawler():
         departureName = dcityname = route.dep.city
         arrivalName = acityname = route.arr.city
         header, payload = self.header, self.payload
-        dow = self.__dayOfWeek[flight_date.isoweekday()]
-        header["User-Agent"] = self.userAgent
+        dow = self.dayOfWeek[flight_date.isoweekday()]
+        header["User-Agent"] = choice(self.userAgents)
+        header["Referer"] = "https://flights.ctrip.com/online/list/oneway-" + \
+            f"{acity}-{dcity}?depdate={flight_date}"
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                      "acityname": acityname, "date": flight_date.isoformat()}]
 
         try:
             response = post(
                 self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
-            routeList = loads(response.text).get('data').get('routeList')
+            data = loads(response.text).get('data')
+            self.flag = response.status_code, data.get('version')
+            routeList = data.get('routeList')
         except:
+            self.flag = (0, 'Unknown')
             try:
                 response.close()
             finally:
@@ -301,10 +251,10 @@ class CtripCrawler():
 
     def show_progress(self, dcity: str, acity: str) -> float:
         '''Progress indicator with a current time (float) return'''
-        m, s = divmod(int((self.__total - self.__idct) * self.__avgTime), 60)
+        m, s = divmod(int((self.total - self.__idct) * self.__avgTime), 60)
         h, m = divmod(m, 60)
         print(f'\r{dcity}-{acity} >> eta {h:02d}:{m:02d}:{s:02d} >> ', 
-              end = f'{int(self.__idct / self.__total * 100):03d}%')
+              end = f'{int(self.__idct / self.total * 100):03d}%')
         return datetime.now().timestamp()
 
     @staticmethod
@@ -388,10 +338,7 @@ class CtripCrawler():
         overwrite: bool = kwargs.get('overwrite', False)
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
-        antiempty: int = kwargs.get('antiempty') if kwargs.get('antiempty', 0) > 1 else 0
-
-        if not self.check(1, attempt):
-            self.exits(4)
+        antiempty: int = kwargs.get('antiempty') if kwargs.get('antiempty', 0) >= 1 else 0
 
         '''Part separates'''
         if overwrite or kwargs.get('nopreskip'):
@@ -412,7 +359,7 @@ class CtripCrawler():
         finally:
             if kwargs.get('reverse'):
                 routes.reverse()
-            self.__total = len(routes) * self.days
+            self.total = len(routes) * self.days
         
         '''Data collecting controller'''
         for route in routes:
@@ -422,7 +369,7 @@ class CtripCrawler():
                 Path(path / f'{arr}~{dep}.xlsx').exists()
             if not overwrite and exist:
                 print(f'{dep}-{arr} already collected, skip')
-                self.__total -= self.days
+                self.total -= self.days
                 continue    # Already processed.
             collect_date = last_date = self.flight_date   #reset
             datarows = []
@@ -445,7 +392,7 @@ class CtripCrawler():
                         print(' ...retry', end = '')
                 else:
                     if i == 0 and data_diff < self.__threshold:
-                        self.__total -= self.days
+                        self.total -= self.days
                         print(f'\r{dep}-{arr} has {data_diff} flight(s), ignored. ')
                         __ignores.add((dep, arr))
                         break
@@ -471,7 +418,7 @@ class CtripCrawler():
                             print(' ...retry', end = '')
                     else:
                         if i == 0 and data_diff < self.__threshold:
-                            self.__total -= self.days
+                            self.total -= self.days
                             print(f'\r{arr}-{dep} has {data_diff} flight(s), ignored. ')
                             __ignores.add((arr, dep))
                             break
@@ -483,9 +430,9 @@ class CtripCrawler():
                 collect_date += timedelta(1)  #one day forward
                 self.__idct += 1
                 self.__avgTime = (datetime.now().timestamp() - curr + self.__avgTime \
-                    * (self.__total - 1)) / self.__total
+                    * (self.total - 1)) / self.total
             else:
-                antiflag = last_date + timedelta(antiempty + 1) >= collect_date if antiempty else True
+                antiflag = last_date + timedelta(antiempty) >= collect_date if antiempty else True
                 msg = f'\r{dep}-{arr} '
                 if len(datarows) and with_output and antiflag:
                     self.file = self.output_excel(datarows, dep, arr, path, values_only, self.with_return)
@@ -494,13 +441,15 @@ class CtripCrawler():
                 elif len(datarows) and antiflag:
                     print(msg + 'generated!               ')
                 elif len(datarows) and not antiflag:
-                    print(msg + 'WARN: output disabled!   ')
-                    self.check()
+                    print(msg + 'WARN: output disabled, code: {0}, version: {1}'.format(*self.flag))
+                    if self.flag != (200, 'V2'):
+                        input('Continue / Exit')
                     self.__warn += 1
                     continue
                 else:
-                    print(msg + 'WARN: no data!           ')
-                    self.check()
+                    print(msg + 'WARN: no data, code: {0}, version: {1}'.format(*self.flag))
+                    if self.flag != (200, 'V2'):
+                        input('Continue / Exit')
                     self.__warn += 1
                     continue
                 yield datarows
@@ -522,12 +471,12 @@ if __name__ == "__main__":
     # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
     # 城市列表, 支持输入IATA/ICAO代码或城市名称；亦可输入 Route / Airport 类
-    cities = []
+    cities = [Route('CTU', 'BJS')]
 
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
-    #忽略的航线，可用Route或tuple
-    ignore_routes = {}
+    #忽略的航线，可用Route或tuple表示
+    ignore_routes = set()
 
     # 代理: 字符串 - 代理网址API / False - 禁用 / 不填 - 使用ProxyPool
     proxyurl = None
@@ -535,6 +484,6 @@ if __name__ == "__main__":
     # 航班爬取: 机场三字码列表、起始年月日、往后天数
     # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
     # 运行参数: 是否输出文件 (否: 生成列表) 、存储路径、是否带格式
-    crawler = CtripCrawler(cities, date.today(), 30, 0, ignore_routes, ignore_threshold, True)
+    crawler = CtripCrawler(cities, date(2022, 3, 31), 2, 0, ignore_routes, ignore_threshold, True)
     for data in crawler.run():
         pass
