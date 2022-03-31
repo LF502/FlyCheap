@@ -1,7 +1,7 @@
 import datetime
 import time
 import hashlib
-import random
+from random import choice
 from requests import get, post
 from json import dumps
 from ctripcrawler import CtripCrawler
@@ -12,29 +12,16 @@ class CtripSearcher(CtripCrawler):
     
     Use `run` to process!
     """
-    def __init__(self, targets: list, flight_date: datetime.date = datetime.datetime.now().date(), 
-                 days: int = 1, day_limit: int = 0, ignore_cities: set = None, ignore_threshold: int = 3, 
-                 with_return: bool = True, proxy: str | bool = None) -> None:
-
-        CtripCrawler.__init__(self, targets, flight_date, days, day_limit, ignore_cities, ignore_threshold, with_return, proxy)
-
-        self.__dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
-
+    def __init__(self, **kwargs) -> None:
+        CtripCrawler.__init__(self, **kwargs)
         self.url = "https://flights.ctrip.com/international/search/api/search/batchSearch"
-        
-        self.__codesum = len(targets)
-        self.__total = self.__codesum * (self.__codesum + 1) * self.days / 2
-
-
-    def __sizeof__(self) -> int:
-        return self.__total
 
     @property
     def cookie(self) -> str:
         random_str = "abcdefghijklmnopqrstuvwxyz1234567890"
         random_id = ""
         for _ in range(6):
-            random_id += random.choice(random_str)
+            random_id += choice(random_str)
         t = str(int(round(time.time() * 1000)))
 
         bfa_list = ["1", t, random_id, "1", t, t, "1", "1"]
@@ -65,28 +52,26 @@ class CtripSearcher(CtripCrawler):
             return "", None
 
 
-
     def collector(self, flight_date: datetime.date, route) -> list[list]:
         datarows = list()
         dcity, acity = route.separates('code')
         departureName = dcityname = route.dep.city
         arrivalName = acityname = route.arr.city
-        dow, date = self.__dayOfWeek[flight_date.isoweekday()], flight_date.isoformat()
-        proxy = None if self.proxylist == False else self.proxy if self.proxylist else self.proxypool
-        transaction_id, data = self.transaction_id(dcity, acity, date, proxy)
+        dow, date = self.dayOfWeek[flight_date.isoweekday()], flight_date.isoformat()
+        transaction_id, data = self.transaction_id(dcity, acity, date, self.proxy())
         if transaction_id == "" or data is None:
             return datarows
         header = {"origin": "https://flights.ctrip.com", 
-                  "referer": f"https://flights.ctrip.com/online/list/oneway-{dcity}-{acity}?_=1&depdate={date}&cabin=y&containstax=1", 
+                  "referer": f"https://flights.ctrip.com/online/list/oneway-{acity}-{dcity}?_=1&depdate={date}&cabin=y&containstax=1", 
                   "transactionid": transaction_id, 
                   "sign": self.sign(transaction_id, dcity, acity, date), 
                   "scope": data["scope"], 
                   "content-type": "application/json;charset=UTF-8",
-                  "user-agent": self.userAgent, 
+                  "user-agent": choice(self.userAgents), 
                   "cookie": self.cookie, }
 
         try:
-            response = post(self.url, data = dumps(data), headers = header, proxies = proxy)
+            response = post(self.url, data = dumps(data), headers = header, proxies = self.proxy())
             routeList = response.json()
             response.close
             if routeList["data"]["context"]["flag"] == 0:
