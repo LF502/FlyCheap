@@ -1,9 +1,11 @@
 __all__ = ('Airport', 'Route', 'skipped_routes', 'airport_throughput', 'city_class', 'city_location', 'tourism')
 
+from random import choice
 from warnings import warn
 from database import _airfare, _city, _greatcircle, _iata, _icao, _multi, _inactive, _low, \
     city_class, city_location, tourism, airport_throughput
 skipped_routes = _inactive | _low
+_temp = list(_iata.keys())
 
 class Airport:
     '''
@@ -37,7 +39,7 @@ class Airport:
             elif _icao.get(__str):
                 __str = _icao.get(__str)
             __str = __str.upper()
-            if __str in _iata.keys():
+            if __str in _temp:
                 self.iata = __str
                 self.icao, self.city, self.airport, self.city_eng, self.airport_eng, \
                     self.latitude, self.longitude, self.type = _iata.get(__str)
@@ -101,6 +103,10 @@ class Airport:
         return self.city + self.airport if self.city in _multi else self.city
     
     @classmethod
+    def random(cls):
+        return cls.__new__(Airport, choice(_temp))
+    
+    @classmethod
     def add(cls, iata: str, city: str, **kwargs):
         '''
         Add an aiport by iata code and city (least required)
@@ -150,8 +156,12 @@ class Route:
             raise TypeError("String or class 'Airport' required")
     
     @classmethod
-    def fromformat(cls, __str, /, *, sep: str = '-'):
-        return cls(*(__str.split(sep, 1)))
+    def fromformat(cls, __str:str , sep: str = '-'):
+        return cls.__new__(Route, *(__str.split(sep, 1)))
+    
+    @classmethod
+    def random(cls):
+        return cls.__new__(Route, Airport.random(), Airport.random())
     
     def __eq__(self, other):
         if isinstance(other, Route):

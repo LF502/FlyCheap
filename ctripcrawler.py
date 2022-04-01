@@ -1,8 +1,9 @@
 from datetime import datetime, date, time, timedelta
 from time import sleep
-from requests import get, post
-from json import dumps, loads
+from requests import get, post, ConnectTimeout
+from json import JSONDecodeError, dumps, loads
 from random import random, choice
+from sys import exit
 from typing import Generator, Literal
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
@@ -22,7 +23,6 @@ class CtripCrawler():
         "Content-Type": "application/json;charset=utf-8", 
         "Accept": "application/json", 
         "Accept-Language": "zh-cn", 
-        "Host": "flights.ctrip.com", 
         "Origin": "https://flights.ctrip.com", 
         "Referer": "https://flights.ctrip.com/international/search/domestic", }
     payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
@@ -190,25 +190,28 @@ class CtripCrawler():
         dow = self.dayOfWeek[flight_date.isoweekday()]
         header["User-Agent"] = choice(self.userAgents)
         header["Referer"] = "https://flights.ctrip.com/online/list/oneway-" + \
-            f"{acity}-{dcity}?depdate={flight_date}"
+            f"{Route.random().format()}?depdate={flight_date}"
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                      "acityname": acityname, "date": flight_date.isoformat()}]
 
         try:
             response = post(
                 self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
-            data = loads(response.text).get('data')
-            self.flag = response.status_code, data.get('version')
+            code, url, text = response.status_code, response.url, response.text
+            response.close()
+            data = loads(text).get('data')
+            self.flag = code, data.get('version', 'Unknown')
             routeList = data.get('routeList')
-        except:
-            self.flag = (0, 'Unknown')
-            try:
-                response.close()
-            finally:
-                return datarows
-        response.close()
+        except ConnectTimeout:
+            return datarows
+        except JSONDecodeError:
+            self.flag = code, 'Not a json response ' + url if 'verify' in url else ''
+            return datarows
+        except Exception as error:
+            self.flag = 0, error
+            return datarows
         #print(routeList)
-        if routeList is None:
+        if not isinstance(routeList, list):
             # No data or version error (anti web crawler, etc)
             return datarows
 
@@ -378,11 +381,17 @@ class CtripCrawler():
 
                 '''Get OUTbound flights data, attempts for ample data'''
                 for j in range(attempt):
-                    data_diff = len(datarows)
-                    datarows.extend(self.collector(collect_date, route))
-                    data_diff = len(datarows) - data_diff
-                    if data_diff >= self.__limits or (i != 0 and data_diff > 0):
+                    datarow = self.collector(collect_date, route)
+                    while self.flag != (200, 'V2'):
+                        print('WARN: code {0} [200], {1} [V2]'.format(*self.flag))
+                        try:
+                            input('\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
+                            datarow = self.collector(collect_date, route)
+                        except EOFError:
+                            exit(0)
+                    if len(datarow) >= self.__limits or (i != 0 and len(datarow)):
                         last_date = collect_date
+                        datarows.extend(datarow)
                         break
                     elif dep in noretry or arr in noretry:
                         print(f' ...few data in {dep}-{arr} ', 
@@ -391,24 +400,30 @@ class CtripCrawler():
                     elif j == 1:
                         print(' ...retry', end = '')
                 else:
-                    if i == 0 and data_diff < self.__threshold:
+                    if i == 0 and len(datarow) < self.__threshold:
                         self.total -= self.days
-                        print(f'\r{dep}-{arr} has {data_diff} flight(s), ignored. ')
+                        print(f'\r{dep}-{arr} has {len(datarow)} flight(s), ignored. ')
                         __ignores.add((dep, arr))
                         break
-                    elif data_diff < self.__limits:
+                    elif len(datarow) < self.__limits:
                         print(f' WARN: few data in {dep}-{arr} ', 
                               end = collect_date.strftime('%m/%d'))
                         self.__warn += 1
-
+                
                 '''Get INbound flights data, attempts for ample data'''
                 if self.with_return:
                     for j in range(attempt):
-                        data_diff = len(datarows)
-                        datarows.extend(self.collector(collect_date, route.returns))
-                        data_diff = len(datarows) - data_diff
-                        if data_diff >= self.__limits or (i != 0 and data_diff > 0):
+                        datarow = self.collector(collect_date, route.returns)
+                        while self.flag != (200, 'V2'):
+                            print('WARN: code {0} [200], {1} [V2]'.format(*self.flag))
+                            try:
+                                input('\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
+                                datarow = self.collector(collect_date, route)
+                            except EOFError:
+                                exit(0)
+                        if len(datarow) >= self.__limits or (i != 0 and len(datarow) > 0):
                             last_date = collect_date
+                            datarows.extend(datarow)
                             break
                         elif dep in noretry or arr in noretry:
                             print(f' ...few data in {arr}-{dep} ', 
@@ -417,12 +432,12 @@ class CtripCrawler():
                         elif j == 1:
                             print(' ...retry', end = '')
                     else:
-                        if i == 0 and data_diff < self.__threshold:
+                        if i == 0 and len(datarow) < self.__threshold:
                             self.total -= self.days
-                            print(f'\r{arr}-{dep} has {data_diff} flight(s), ignored. ')
+                            print(f'\r{arr}-{dep} has {len(datarow)} flight(s), ignored. ')
                             __ignores.add((arr, dep))
                             break
-                        elif data_diff < self.__limits:
+                        elif len(datarow) < self.__limits:
                             print(f' WARN: few data in {arr}-{dep} ', 
                                   end = collect_date.strftime('%m/%d'))
                             self.__warn += 1
@@ -442,14 +457,10 @@ class CtripCrawler():
                     print(msg + 'generated!               ')
                 elif len(datarows) and not antiflag:
                     print(msg + 'WARN: output disabled, code: {0}, version: {1}'.format(*self.flag))
-                    if self.flag != (200, 'V2'):
-                        input('Continue / Exit')
                     self.__warn += 1
                     continue
                 else:
                     print(msg + 'WARN: no data, code: {0}, version: {1}'.format(*self.flag))
-                    if self.flag != (200, 'V2'):
-                        input('Continue / Exit')
                     self.__warn += 1
                     continue
                 yield datarows

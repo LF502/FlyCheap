@@ -4,6 +4,7 @@ import hashlib
 from random import choice
 from requests import get, post
 from json import dumps
+from civilaviation import Route
 from ctripcrawler import CtripCrawler
 
 class CtripSearcher(CtripCrawler):
@@ -15,6 +16,8 @@ class CtripSearcher(CtripCrawler):
     def __init__(self, **kwargs) -> None:
         CtripCrawler.__init__(self, **kwargs)
         self.url = "https://flights.ctrip.com/international/search/api/search/batchSearch"
+        self.header = {"origin": "https://flights.ctrip.com", 
+                       "content-type": "application/json;charset=UTF-8"}
 
     @property
     def cookie(self) -> str:
@@ -47,8 +50,8 @@ class CtripSearcher(CtripCrawler):
             data = response.json().get("data")
             response.close
             return data["transactionID"], data
-        except Exception as e:
-            print("\tWARN: get transaction id failed,", e, end = '')
+        except Exception as error:
+            print("\tWARN: get transaction id failed,", error, end = '')
             return "", None
 
 
@@ -61,17 +64,15 @@ class CtripSearcher(CtripCrawler):
         transaction_id, data = self.transaction_id(dcity, acity, date, self.proxy())
         if transaction_id == "" or data is None:
             return datarows
-        header = {"origin": "https://flights.ctrip.com", 
-                  "referer": f"https://flights.ctrip.com/online/list/oneway-{acity}-{dcity}?_=1&depdate={date}&cabin=y&containstax=1", 
-                  "transactionid": transaction_id, 
-                  "sign": self.sign(transaction_id, dcity, acity, date), 
-                  "scope": data["scope"], 
-                  "content-type": "application/json;charset=UTF-8",
-                  "user-agent": choice(self.userAgents), 
-                  "cookie": self.cookie, }
+        self.header["referer"] = f"https://flights.ctrip.com/online/list/oneway-{Route.random().format()}?_=1&depdate={date}&cabin=y&containstax=1"
+        self.header["transactionid"] = transaction_id
+        self.header["sign"] = self.sign(transaction_id, dcity, acity, date)
+        self.header["scope"] = data["scope"]
+        self.header["user-agent"] = choice(self.userAgents)
+        self.header["cookie"] = self.cookie
 
         try:
-            response = post(self.url, data = dumps(data), headers = header, proxies = self.proxy())
+            response = post(self.url, data = dumps(data), headers = self.header, proxies = self.proxy(), timeout = 10)
             routeList = response.json()
             response.close
             if routeList["data"]["context"]["flag"] == 0:
