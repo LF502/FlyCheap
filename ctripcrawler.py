@@ -1,8 +1,16 @@
-from datetime import datetime, date, time, timedelta
+__all__ = ('CtripCrawler', 'CtripSearcher', 'ItineraryCollector')
+
 from time import sleep
-from requests import get, post, ConnectTimeout
-from json import JSONDecodeError, dumps, loads
-from random import random, choice
+from time import time as floattime
+from datetime import datetime, date, time, timedelta
+from urllib.parse import urlencode
+from pandas import DataFrame, read_csv
+from requests import get, post
+from requests.exceptions import RequestException, Timeout, JSONDecodeError
+from json import dumps
+from hashlib import md5
+from numpy.random import random, seed
+from random import choice
 from sys import exit
 from typing import Generator, Literal
 from openpyxl import Workbook
@@ -14,8 +22,30 @@ from civilaviation import Airport, Route
 class CtripCrawler():
     """
     Ctrip flight tickets crawler
+    =====
+    Get flight data from API: https://flights.ctrip.com/itinerary/api/12808/products
     
-    Use `run` to process!
+    Parameters
+    -----
+    `targets`: All routes / citys to be collected
+    `flight_date`: The starting date of itinerary
+    `days`: The number of days to be collected
+    `day_limit`: Maximum days advanced of collection
+    `ignore_routes`: Routes in it are ignored
+    `ignore_threshold`: Flights less than this value is not collected
+    `with_return`: Collect return flights
+    `proxy`: Set proxy method
+    
+    Methods
+    -----
+    `run`: Start the crawler in an order of route, flight date
+    `proxy`: Return a proxy dict by the pre-set proxy parameter
+    
+    See Also
+    -----
+    - `ctripcrawler.CtripSearcher`
+    - `ctripcrawler.ItineraryCollector`
+    
     """
 
     url = "https://flights.ctrip.com/itinerary/api/12808/products"
@@ -28,64 +58,64 @@ class CtripCrawler():
     payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
     dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
     userAgents = [
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:95.0) Gecko/20100101 Firefox/95.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:96.0) Gecko/20100101 Firefox/96.0',
-            'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.7113.93 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0',
-            'Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.85 YaBrowser/21.11.4.727 Yowser/2.5 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 Edg/96.0.1054.62',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.43',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.50',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.58',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36 OPR/82.0.4227.33',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36 Edg/97.0.1072.55',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36 Edg/97.0.1072.62',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:97.0) Gecko/20100101 Firefox/97.0',
-            'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0',
-            'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-            'Mozilla/5.0 (X11; CrOS x86_64 14268.67.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.111 Safari/537.36',
-            'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:94.0) Gecko/20100101 Firefox/94.0',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
-            'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0']
-
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:96.0) Gecko/20100101 Firefox/96.0',
+        'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.7113.93 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0',
+        'Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.85 YaBrowser/21.11.4.727 Yowser/2.5 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 Edg/96.0.1054.62',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.43',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.50',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36 OPR/82.0.4227.58',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36 OPR/82.0.4227.33',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36 Edg/97.0.1072.55',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36 Edg/97.0.1072.62',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:97.0) Gecko/20100101 Firefox/97.0',
+        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (X11; CrOS x86_64 14268.67.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.111 Safari/537.36',
+        'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:94.0) Gecko/20100101 Firefox/94.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0']
+    
     def __init__(
         self, targets: list[str | Airport | Route], flight_date: date = date.today() + timedelta(1), 
         days: int = 1, day_limit: int = 0, ignore_routes: set = set(), ignore_threshold: int = 3, 
@@ -140,11 +170,10 @@ class CtripCrawler():
         if self.days < 0:
             raise ValueError(f'{curr_date} + {self.days} days exceeds {flight_date}')
 
-        self.__warn = self.__idct = 0
-        self.__avgTime = 2.9 if with_return else 1.3
+        self.warn = self.idct = 0
+        self.avg = 2.9 if with_return else 1.3
         self.with_return = with_return
-        self.__limits = self.__threshold if self.__threshold else 1
-        self.flag = (200, 'V2')
+        self.limits = self.__threshold if self.__threshold else 1
 
         if proxy is False:
             self.__proxy == False
@@ -180,7 +209,34 @@ class CtripCrawler():
         else:
             return None
 
-    def collector(self, flight_date: date, route: Route) -> list[list]:
+
+    @staticmethod
+    def referers(route: Route) -> str:
+        seed = 10 * random()
+        if seed > 5:
+            dates = date.today() + timedelta(int(30 * random()))
+            route = route.returns if random() > 0.5 else route
+            if seed > 8:
+                return "https://flights.ctrip.com/online/channel/domestic"
+            elif seed > 6:
+                return f"https://flights.ctrip.com/online/list/oneway-{route.format()}?depdate={dates}"
+            else:
+                return "https://www.ctrip.com/"
+        else:
+            query = f"{route.dep.city} {route.arr.city} 机票" if random() > 0.5 else f"{route.dep.city}到{route.arr.city}机票"
+            if seed > 4:
+                return "https://cn.bing.com/search?" + urlencode({"q": query})
+            elif seed > 3:
+                return "https://www.sogou.com/web?" + urlencode({"query": query})
+            elif seed > 2:
+                return "https://www.so.com/s?" + urlencode({"ie": "utf8", "q": query})
+            elif seed > 1:
+                return "https://www.baidu.com/s?" + urlencode({"wd": query})
+            else:
+                return "https://www.sogou.com/tx?" + urlencode({"ie": "utf8", "query": query})
+
+
+    def collector(self, flight_date: date, route: Route) -> tuple[tuple, list[list]]:
         '''Web crawler main'''
         datarows = list()
         dcity, acity = route.separates('code')
@@ -189,75 +245,75 @@ class CtripCrawler():
         header, payload = self.header, self.payload
         dow = self.dayOfWeek[flight_date.isoweekday()]
         header["User-Agent"] = choice(self.userAgents)
-        header["Referer"] = "https://flights.ctrip.com/online/list/oneway-" + \
-            f"{Route.random().format()}?depdate={flight_date}"
+        header["Referer"] = self.referers(route if random() > 0.3 else Route.random())
         payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
                                      "acityname": acityname, "date": flight_date.isoformat()}]
 
         try:
             response = post(
                 self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
-            code, url, text = response.status_code, response.url, response.text
+            code, url = response.status_code, response.url
+            data = response.json().get('data', {})
             response.close()
-            data = loads(text).get('data')
-            self.flag = code, data.get('version', 'Unknown')
+            flag = code, data.get('version', 'Unknown')
             routeList = data.get('routeList')
-        except ConnectTimeout:
-            return datarows
+            if not isinstance(routeList, list):
+                routeList = []
+            for routes in routeList:
+                legs = routes.get('legs')
+                try:
+                    if len(legs) == 1: # Flights that need to transfer is ignored.
+                        #print(legs,end='\n\n')
+                        flight = legs[0].get('flight')
+                        if flight.get('sharedFlightNumber'):
+                            continue    # Shared flights not collected
+                        airlineName = flight.get('airlineName')
+                        if '旗下' in airlineName:   # Airline name should be as simple as possible
+                            airlineName = airlineName.split('旗下', 1)[1]   # Convert time
+                        departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
+                        arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
+                        if route.dep.multi:  # Multi-airport cities need the airport name while others do not
+                            departureName = flight.get('departureAirportInfo').get('airportName')
+                            departureName = dcityname + departureName.strip('成都')[:2]
+                        elif not departureName:
+                            departureName = flight.get('departureAirportInfo').get('cityName')
+                        if route.arr.multi:
+                            arrivalName = flight.get('arrivalAirportInfo').get('airportName')
+                            arrivalName = acityname + arrivalName.strip('成都')[:2]
+                        elif not arrivalName:
+                            arrivalName = flight.get('arrivalAirportInfo').get('cityName')
+                        craftType = flight.get('craftTypeKindDisplayName')
+                        craftType = craftType.strip('型') if craftType else "中"
+                        ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
+                        price = ticket.get('price').get('price')
+                        rate = ticket.get('price').get('rate')
+                        datarows.append([
+                            flight_date, dow, airlineName, craftType, departureName, 
+                            arrivalName, departureTime, arrivalTime, price, rate])
+                except Exception as error:
+                    print(f"  WARN: {error} in {dcity}-{acity} {flight_date.strftime('%m/%d')}")
+                    self.warn += 1
+            if len(datarows):
+                datarows.sort(key = lambda x: x[6])
         except JSONDecodeError:
-            self.flag = code, 'Not a json response ' + url if 'verify' in url else ''
-            return datarows
+            response.close
+            flag = code, 'Not a json response ' + url if url != self.url else ''
+        except RequestException or Timeout:
+            flag = 0, 'Timeout'
         except Exception as error:
-            self.flag = 0, error
-            return datarows
-        #print(routeList)
-        if not isinstance(routeList, list):
-            # No data or version error (anti web crawler, etc)
-            return datarows
-
-        for routes in routeList:
-            legs = routes.get('legs')
-            try:
-                if len(legs) == 1: # Flights that need to transfer is ignored.
-                    #print(legs,end='\n\n')
-                    flight = legs[0].get('flight')
-                    if flight.get('sharedFlightNumber'):
-                        continue    # Shared flights not collected
-                    airlineName = flight.get('airlineName')
-                    if '旗下' in airlineName:   # Airline name should be as simple as possible
-                        airlineName = airlineName.split('旗下', 1)[1]   # Convert time
-                    departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
-                    arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
-                    if route.dep.multi:  # Multi-airport cities need the airport name while others do not
-                        departureName = flight.get('departureAirportInfo').get('airportName')
-                        departureName = dcityname + departureName.strip('成都')[:2]
-                    elif not departureName:
-                        departureName = flight.get('departureAirportInfo').get('cityName')
-                    if route.arr.multi:
-                        arrivalName = flight.get('arrivalAirportInfo').get('airportName')
-                        arrivalName = acityname + arrivalName.strip('成都')[:2]
-                    elif not arrivalName:
-                        arrivalName = flight.get('arrivalAirportInfo').get('cityName')
-                    craftType = flight.get('craftTypeKindDisplayName')
-                    craftType = craftType.strip('型') if craftType else "中"
-                    ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
-                    price = ticket.get('price').get('price')
-                    rate = ticket.get('price').get('rate')
-                    datarows.append([
-                        flight_date, dow, airlineName, craftType, departureName, 
-                        arrivalName, departureTime, arrivalTime, price, rate])
-            except Exception as error:
-                print(' WARN:', error, f'in {dcity}-{acity} ', end = flight_date.strftime('%m/%d'))
-                self.__warn += 1
-        return datarows
+            flag = code if 'code' in dir() else 0, error
+        finally:
+            return flag, datarows
 
 
-    def show_progress(self, dcity: str, acity: str) -> float:
+    def show_progress(self, dcity: str, acity: str, dates: date = None) -> float:
         '''Progress indicator with a current time (float) return'''
-        m, s = divmod(int((self.total - self.__idct) * self.__avgTime), 60)
+        m, s = divmod(int((self.total - self.idct) * self.avg), 60)
         h, m = divmod(m, 60)
-        print(f'\r{dcity}-{acity} >> eta {h:02d}:{m:02d}:{s:02d} >> ', 
-              end = f'{int(self.__idct / self.total * 100):03d}%')
+        if dates:
+            dates = dates.strftime('%m/%d')
+        print(f'\r{dcity}-{acity} {dates} >> eta {h:02d}:{m:02d}:{s:02d} >> ', 
+              end = f'{int(self.idct / self.total * 100):03d}%')
         return datetime.now().timestamp()
 
     @staticmethod
@@ -320,7 +376,7 @@ class CtripCrawler():
             - reverse: `bool`, reverse collecting order, default: `False`
         - In case of city with few flights...
             - attempt: `int`, the number of attempt to get ample data, default: `3`
-            - antiempty: `int`, skip output few flights in the last flight days , default: `0`
+            - antiempty: `int`, skip output few flights in the last flight days, default: `0`
             - noretry: `list`, routes connecting the city has no retry, default: `list()`
         
         File Detection Parameters
@@ -328,12 +384,11 @@ class CtripCrawler():
         - overwrite: `bool`, collect and overwrite existing files, default: `False`
         - nopreskip: `bool`, keep the orignal collect route without detection, default: `False`
         '''
-        filesum = 0
+        files = 0
         __ignores = set()
+
         '''Initialize running parameters'''
-        path = kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat()))
-        if not isinstance(path, Path):
-            path = Path(path)
+        path = Path(kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat())))
         path.mkdir(parents = True, exist_ok = True)
         values_only: bool = kwargs.get('values_only', False)
         parts: int = kwargs.get('parts', 1)
@@ -363,7 +418,8 @@ class CtripCrawler():
             if kwargs.get('reverse'):
                 routes.reverse()
             self.total = len(routes) * self.days
-        
+        dates = list((self.flight_date + timedelta(i)) for i in range(self.days))
+
         '''Data collecting controller'''
         for route in routes:
             dep, arr = route.separates('code')
@@ -374,107 +430,366 @@ class CtripCrawler():
                 print(f'{dep}-{arr} already collected, skip')
                 self.total -= self.days
                 continue    # Already processed.
-            collect_date = last_date = self.flight_date   #reset
+            last_date = self.flight_date   #reset
             datarows = []
-            for i in range(self.days):
+            for collect_date in dates:
                 curr = self.show_progress(dep, arr)
 
                 '''Get OUTbound flights data, attempts for ample data'''
-                for j in range(attempt):
-                    datarow = self.collector(collect_date, route)
-                    while self.flag != (200, 'V2'):
-                        print('WARN: code {0} [200], {1} [V2]'.format(*self.flag))
+                for _ in range(attempt):
+                    flag, datarow = self.collector(collect_date, route)
+                    if flag[1] == 'Timeout':
+                        for _ in range(attempt):
+                            flag, datarow = self.collector(collect_date, route)
+                            if flag == (200, 'V2'):
+                                break
+                            else:
+                                sleep(random())
+                        else:
+                            print(' ...timeout', end = '')
+                    while flag[1] != 'V2':
                         try:
-                            input('\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
-                            datarow = self.collector(collect_date, route)
+                            print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
+                            input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
                         except EOFError:
                             exit(0)
-                    if len(datarow) >= self.__limits or (i != 0 and len(datarow)):
-                        last_date = collect_date
+                        flag, datarow = self.collector(collect_date, route)
+                    if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow)):
+                        if collect_date > last_date:
+                            last_date = collect_date
                         datarows.extend(datarow)
                         break
                     elif dep in noretry or arr in noretry:
                         print(f' ...few data in {dep}-{arr} ', 
                                 end = collect_date.strftime('%m/%d'))
                         break
-                    elif j == 1:
-                        print(' ...retry', end = '')
                 else:
-                    if i == 0 and len(datarow) < self.__threshold:
+                    if collect_date == self.flight_date and len(datarow) < self.__threshold:
                         self.total -= self.days
                         print(f'\r{dep}-{arr} has {len(datarow)} flight(s), ignored. ')
                         __ignores.add((dep, arr))
                         break
-                    elif len(datarow) < self.__limits:
-                        print(f' WARN: few data in {dep}-{arr} ', 
+                    elif len(datarow) < self.limits:
+                        print(f'  WARN: few data in {dep}-{arr} ', 
                               end = collect_date.strftime('%m/%d'))
-                        self.__warn += 1
-                
+                        self.warn += 1
+
                 '''Get INbound flights data, attempts for ample data'''
                 if self.with_return:
-                    for j in range(attempt):
-                        datarow = self.collector(collect_date, route.returns)
-                        while self.flag != (200, 'V2'):
-                            print('WARN: code {0} [200], {1} [V2]'.format(*self.flag))
+                    for _ in range(attempt):
+                        flag, datarow = self.collector(collect_date, route.returns)
+                        if flag[1] == 'Timeout':
+                            for _ in range(attempt):
+                                flag, datarow = self.collector(collect_date, route)
+                                if flag == (200, 'V2'):
+                                    break
+                                else:
+                                    sleep(random())
+                            else:
+                                print(' ...timeout', end = '')
+                        while flag[1] != 'V2':
                             try:
-                                input('\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
-                                datarow = self.collector(collect_date, route)
+                                print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
+                                input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
                             except EOFError:
                                 exit(0)
-                        if len(datarow) >= self.__limits or (i != 0 and len(datarow) > 0):
-                            last_date = collect_date
+                            flag, datarow = self.collector(collect_date, route)
+                        if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow) > 0):
+                            if collect_date > last_date:
+                                last_date = collect_date 
                             datarows.extend(datarow)
                             break
                         elif dep in noretry or arr in noretry:
                             print(f' ...few data in {arr}-{dep} ', 
                                   end = collect_date.strftime('%m/%d'))
                             break
-                        elif j == 1:
-                            print(' ...retry', end = '')
                     else:
-                        if i == 0 and len(datarow) < self.__threshold:
+                        if collect_date == self.flight_date and len(datarow) < self.__threshold:
                             self.total -= self.days
                             print(f'\r{arr}-{dep} has {len(datarow)} flight(s), ignored. ')
                             __ignores.add((arr, dep))
                             break
-                        elif len(datarow) < self.__limits:
-                            print(f' WARN: few data in {arr}-{dep} ', 
+                        elif len(datarow) < self.limits:
+                            print(f'  WARN: few data in {arr}-{dep} ', 
                                   end = collect_date.strftime('%m/%d'))
-                            self.__warn += 1
+                            self.warn += 1
 
-                collect_date += timedelta(1)  #one day forward
-                self.__idct += 1
-                self.__avgTime = (datetime.now().timestamp() - curr + self.__avgTime \
+                self.idct += 1
+                self.avg = (datetime.now().timestamp() - curr + self.avg \
                     * (self.total - 1)) / self.total
             else:
                 antiflag = last_date + timedelta(antiempty) >= collect_date if antiempty else True
                 msg = f'\r{dep}-{arr} '
                 if len(datarows) and with_output and antiflag:
                     self.file = self.output_excel(datarows, dep, arr, path, values_only, self.with_return)
+                    yield datarows
                     print(msg + 'collected' + ('!               ' if values_only else ' and formatted! '))
-                    filesum += 1
+                    files += 1
                 elif len(datarows) and antiflag:
+                    yield datarows
                     print(msg + 'generated!               ')
                 elif len(datarows) and not antiflag:
-                    print(msg + 'WARN: output disabled, code: {0}, version: {1}'.format(*self.flag))
-                    self.__warn += 1
-                    continue
+                    print(msg + 'WARN: output disabled, code: {0}, version: {1}'.format(*flag))
+                    self.warn += 1
                 else:
-                    print(msg + 'WARN: no data, code: {0}, version: {1}'.format(*self.flag))
-                    self.__warn += 1
-                    continue
-                yield datarows
+                    print(msg + 'WARN: no data, code: {0}, version: {1}'.format(*flag))
+                    self.warn += 1
 
         if with_output:
             if len(__ignores) > 0:
                 with open(f'IgnoredOrError_{self.__threshold}.txt', 'a') as updates:
                     updates.write(str(__ignores) + '\n')
                     print('Ignorance set updated, ', end = '')
-            print(filesum, 'routes collected in', path.name) if filesum > 1 else \
-                print(filesum, 'route collected in', path.name)
-        print('Total warnings:', self.__warn) if self.__warn > 1 else \
-            print('Total warning:', self.__warn) if self.__warn else print()
-        self.__warn = 0
+            print(files, 'routes collected in', path.name) if files > 1 else \
+                print(files, 'route collected in', path.name)
+        print('Total warnings:', self.warn) if self.warn > 1 else \
+            print('Total warning:', self.warn) if self.warn else print()
+        self.warn = 0
+
+class CtripSearcher(CtripCrawler):
+    """
+    Ctrip flight tickets crawler using batch search method.
+    
+    Parameters see class `CtripCrawler`
+    """
+    def __init__(self, **kwargs) -> None:
+        CtripCrawler.__init__(self, **kwargs)
+        self.url = "https://flights.ctrip.com/international/search/api/search/batchSearch"
+        self.header = {"origin": "https://flights.ctrip.com", 
+                       "content-type": "application/json;charset=UTF-8"}
+
+    @staticmethod
+    def cookie() -> str:
+        random_str = "abcdefghijklmnopqrstuvwxyz1234567890"
+        random_id = ""
+        for _ in range(6):
+            random_id += choice(random_str)
+        t = str(int(round(floattime() * 1000)))
+        return "_bfa={}".format(".".join(["1", t, random_id, "1", t, t, "1", "1"]))
+
+    @staticmethod
+    def sign(transaction_id: str, dep: str, arr: str, dates: str | date) -> str:
+        sign_value = transaction_id + dep + arr + str(dates)
+        _sign = md5()
+        _sign.update(sign_value.encode('utf-8'))
+        return _sign.hexdigest()
+
+    @staticmethod
+    def transaction_id(dep: str, arr: str, dates: str | date, proxy: dict = None) -> tuple[str, dict]:
+        url = f"https://flights.ctrip.com/international/search/api/flightlist/oneway-{dep}-{arr}?_=1&depdate={dates}&cabin=y&containstax=1"
+        response = get(url, proxies = proxy)
+        if response.status_code != 200:
+            print("  WARN: get transaction id failed, status code", response.status_code, end = '')
+            return "", None
+        try:
+            data = response.json().get("data")
+            response.close
+            return data["transactionID"], data
+        except Exception as error:
+            print("  WARN: get transaction id failed,", error, end = '')
+            return "", None
+
+
+    def collector(self, flight_date: date, route: Route) -> tuple[tuple, list[list]]:
+        datarows = list()
+        dcity, acity = route.separates('code')
+        departureName = dcityname = route.dep.city
+        arrivalName = acityname = route.arr.city
+        dow = self.dayOfWeek[flight_date.isoweekday()]
+        transaction_id, data = self.transaction_id(dcity, acity, flight_date, self.proxy())
+        if transaction_id == "" or data is None:
+            return datarows
+        self.header["referer"] = self.referers(Route.random() if random() > 0.5 else route)
+        self.header["transactionid"] = transaction_id
+        self.header["sign"] = self.sign(transaction_id, dcity, acity, flight_date)
+        self.header["scope"] = data["scope"]
+        self.header["user-agent"] = choice(self.userAgents)
+        self.header["cookie"] = self.cookie()
+
+        try:
+            response = post(self.url, data = dumps(data), headers = self.header, proxies = self.proxy(), timeout = 10)
+            routeList, code, url = response.json(), response.status_code, response.url
+            response.close
+            flag = code, 'V2'
+            if routeList["data"]["context"]["flag"] == 0:
+                routeList = routeList.get('data').get('flightItineraryList')
+            else:
+                print('  WARN: data return error', routeList["data"]["context"]["flag"], end = '')
+                return datarows
+            for routes in routeList:
+                flightSegments = routes.get('flightSegments')
+                priceList = routes.get('priceList')
+                try:
+                    if len(flightSegments) == 1:    # Flights that need to transfer is ignored.
+                        flight = flightSegments[0].get('flightList')[0]
+                        if flight.get('operateAirlineCode'):
+                            continue    # Shared flights not collected
+                        if flight.get('stopList') != [] or flight.get('stopList') is not None:
+                            continue    # Flights with a stop not collected
+                        airlineName = flight.get('marketAirlineName')
+                        departureTime = time.fromisoformat(flight.get('departureDateTime').split(' ', 1)[1])
+                        arrivalTime = time.fromisoformat(flight.get('arrivalDateTime').split(' ', 1)[1])
+                        if route.dep.multi:  # Multi-airport cities need the airport name while others do not
+                            departureName = flight.get('departureAirportShortName')
+                            departureName = dcityname + departureName[:2]
+                        elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
+                            departureName = flight.get('departureCityName')
+                        if route.arr.multi:
+                            arrivalName = flight.get('arrivalAirportShortName')
+                            arrivalName = acityname + arrivalName[:2]
+                        elif not arrivalName:
+                            arrivalName = flight.get('arrivalCityName')
+                        craftType = flight.get('aircraftSize')
+                        priceList = priceList[0]
+                        price = priceList.get('sortPrice')
+                        rate = priceList.get('priceUnitList')[0].get('flightSeatList')[0].get('discountRate')
+                        datarows.append([flight_date, dow, airlineName, craftType, departureName, arrivalName, 
+                                        departureTime, arrivalTime, price, rate, ])
+                        # 日期, 星期, 航司, 机型, 出发机场, 到达机场, 出发时间, 到达时间, 价格, 折扣
+                    if len(datarows):
+                        datarows.sort(key = lambda x: x[6])
+                except Exception as error:
+                    print(f"  WARN: {error} in {dcity}-{acity} {flight_date.strftime('%m/%d')}")
+                    self.warn += 1
+        except JSONDecodeError:
+            flag = code, 'Not a json response ' + url if url != self.url else ''
+        except Timeout or RequestException:
+            flag = 0, 'Timeout'
+        except Exception as error:
+            flag = code if 'code' in dir() else 0, error
+        finally:
+            return flag, datarows
+
+class ItineraryCollector(CtripSearcher, CtripCrawler):
+    '''
+    Collect itineraries (route - date) in an random order.
+    
+    Parameters see class `CtripCrawler`
+    '''
+    def __init__(self, method: CtripSearcher | CtripCrawler = CtripCrawler, **kwargs) -> None:
+        method.__init__(self, **kwargs)
+        dates = list((self.flight_date + timedelta(i)) for i in range(self.days))
+        self.itineraries = []
+        for route in self.routes:
+            for flight_date in dates:
+                self.itineraries.append((flight_date, route))
+                if self.with_return:
+                    self.itineraries.append((flight_date, route.returns))
+        self.avg = 1.4
+    
+    def run(self, tempfile: Path | str | None, **kwargs):
+        '''
+        Collect Parameters
+        -----
+        - Parts of data collection, for multi-threading.
+            - parts: `int`, the total number of parts, default: `0`
+            - part: `int`, the index of the running part, default: `0`
+        - In case of city with few flights...
+            - attempt: `int`, the number of attempt to get ample data, default: `3`
+            - noretry: `list`, routes connecting the city has no retry, default: `list()`
+        
+        Running Parameters
+        -----
+        - tempfile: `Path` | 'str', where the data stores.
+        - randomseed: int | None, seed of randomizing itineraries, default: `date.today().toordinal() % 10`
+        '''
+        
+        header = ['flight_date', 'dow', 'airlineName', 'craftType', 'departureName', 'arrivalName', 
+                  'departureTime', 'arrivalTime', 'price', 'rate', 'itinerary']
+        if Path(tempfile).exists():
+            tempdata = read_csv(Path(tempfile))
+            exist = tempdata['itinerary'].unique()
+            del tempdata
+        else:
+            DataFrame(columns = header).to_csv(Path(tempfile), index = False)
+            exist = []
+        
+        parts: int = kwargs.get('parts', 1)
+        part: int = kwargs.get('part', 1)
+        noretry: list = kwargs.get('noretry', [])
+        attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
+        randomseed: int | None = kwargs.get('randomseed', date.today().toordinal() % 10)
+        
+        itineraries = []
+        for itinerary in self.itineraries:
+            if f'{itinerary[1].format()} {itinerary[0]}' not in exist:
+                itineraries.append(itinerary)
+        seed(randomseed)
+        itineraries.sort(key = lambda x: random())
+        try:
+            if part > 0 and parts > 1:
+                part_len = int(len(itineraries) / parts)
+                itineraries = itineraries[(parts - 1) * part_len : ] if part >= parts \
+                    else itineraries[(part - 1) * part_len : part * part_len]
+        finally:
+            self.total = len(itineraries)
+        
+        for itinerary in itineraries:
+            dep, arr = itinerary[1].separates('code')
+            curr = self.show_progress(dep, arr, itinerary[0])
+            for _ in range(attempt):
+                flag, datarow = self.collector(*itinerary)
+                if flag[1] == 'Timeout':
+                    for _ in range(attempt):
+                        flag, datarow = self.collector(*itinerary)
+                        if flag == (200, 'V2'):
+                            break
+                        else:
+                            sleep(random())
+                    else:
+                        print(' ...timeout', end = '')
+                while flag[1] != 'V2':
+                    try:
+                        print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
+                        input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
+                    except EOFError:
+                        exit(0)
+                    flag, datarow = self.collector(*itinerary)
+                if len(datarow) >= self.limits or (itinerary[0] != self.flight_date and len(datarow)):
+                    DataFrame(datarow).assign(itinerary = f'{itinerary[1].format()}').to_csv(
+                        tempfile, mode = 'a', header = False, index = False)
+                    break
+                elif dep in noretry or arr in noretry:
+                    print(f" ...few data in {dep}-{arr} {itinerary[0].strftime('%m/%d')}")
+                    break
+            else:
+                if len(datarow) < self.limits:
+                    print(f"  WARN: few data in {dep}-{arr} {itinerary[0].strftime('%m/%d')}")
+                    self.warn += 1
+            
+            self.idct += 1
+            self.avg = (datetime.now().timestamp() - curr + self.avg \
+                * (self.total - 1)) / self.total
+    
+    def organize(self, *tempfile: Path | str | None, **kwargs) -> Generator:
+        '''
+        Transfer temporary csv files `*tempfile` to `CtripCrawler` base output excels.
+        Same as Ctrip Crawler Output Parameters: `path`, `values_only`, `with_return`
+        '''
+        path = Path(kwargs.get('path', Path(self.first_date) / Path(date.today().isoformat())))
+        path.mkdir(parents = True, exist_ok = True)
+        headers = ['flight_date', 'dow', 'airlineName', 'craftType', 'departureName', 'arrivalName', 
+                   'departureTime', 'arrivalTime', 'price', 'rate']
+        for file in tempfile:
+            tempdata = read_csv(Path(file))
+            tempdata['flight_date'] = tempdata['flight_date'].map(date.fromisoformat)
+            tempdata['departureTime'] = tempdata['departureTime'].map(time.fromisoformat)
+            tempdata['arrivalTime']= tempdata['arrivalTime'].map(time.fromisoformat)
+            tempdata['route'] = (tempdata['departureName'].map(Airport) - \
+                tempdata['arrivalName'].map(Airport)).map(lambda x: x.separates('code'))
+            groups = tempdata.groupby(['route'])
+            rroutes = []
+            for route in tempdata['route'].unique():
+                group = groups.get_group(route).sort_values('flight_date')[headers].to_numpy().tolist()
+                if kwargs.get('with_return', True):
+                    if route in rroutes:
+                        continue
+                    rroute = (route[1], route[0])
+                    rroutes.append(rroute)
+                    group += groups.get_group(rroute).sort_values('flight_date')[headers].to_numpy().tolist()
+                self.file = self.output_excel(
+                    group, *route, path, kwargs.get('values_only', False), kwargs.get('with_return', True))
+                yield group
 
 
 if __name__ == "__main__":
@@ -482,7 +797,7 @@ if __name__ == "__main__":
     # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
 
     # 城市列表, 支持输入IATA/ICAO代码或城市名称；亦可输入 Route / Airport 类
-    cities = [Route('CTU', 'BJS')]
+    cities = []
 
     # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
     ignore_threshold = 3
