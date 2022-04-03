@@ -186,9 +186,9 @@ class Route:
             return False
     
     def __repr__(self):
-        return "{0}.{1}('{2}-{3}': {4}, {5})".format(
+        return "{0}.{1}({2}, {3})".format(
             self.__class__.__module__, self.__class__.__qualname__, 
-            self.dep, self.arr, self.airfare, self.greatcircle)
+            self.dep, self.arr)
     
     def __str__(self):
         return f"{self.dep}-{self.arr}"

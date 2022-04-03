@@ -1,10 +1,9 @@
 __all__ = ('CtripCrawler', 'CtripSearcher', 'ItineraryCollector')
 
 from time import sleep
-from time import time as floattime
 from datetime import datetime, date, time, timedelta
 from urllib.parse import urlencode
-from pandas import DataFrame, read_csv
+from pandas import DataFrame, concat, read_csv
 from requests import get, post
 from requests.exceptions import RequestException, Timeout, JSONDecodeError
 from json import dumps
@@ -27,12 +26,12 @@ class CtripCrawler():
     
     Parameters
     -----
-    `targets`: All routes / citys to be collected
-    `flight_date`: The starting date of itinerary
-    `days`: The number of days to be collected
-    `day_limit`: Maximum days advanced of collection
-    `ignore_routes`: Routes in it are ignored
-    `ignore_threshold`: Flights less than this value is not collected
+    `targets`: All routes / cities to be collected
+    `flight_date`: The starting date of collection (allow past dates)
+    `days`: The number of days to be collected - date range: [flight_date, flight_date + days)
+    `day_limit`: Maximum days advanced of flights - flight_date + days_maximum <= flight_date + day_limit
+    `ignore_routes`: Routes to be ignored
+    `ignore_threshold`: Routes whose flights are less than this value are not collected and noted
     `with_return`: Collect return flights
     `proxy`: Set proxy method
     
@@ -43,8 +42,8 @@ class CtripCrawler():
     
     See Also
     -----
-    - `ctripcrawler.CtripSearcher`
-    - `ctripcrawler.ItineraryCollector`
+    - `ctripcrawler.CtripSearcher`: Batch search method (Another API)
+    - `ctripcrawler.ItineraryCollector`: Collect data by random itineraries
     
     """
 
@@ -117,9 +116,15 @@ class CtripCrawler():
         'Mozilla/5.0 (X11; Linux x86_64; rv:96.0) Gecko/20100101 Firefox/96.0']
     
     def __init__(
-        self, targets: list[str | Airport | Route], flight_date: date = date.today() + timedelta(1), 
-        days: int = 1, day_limit: int = 0, ignore_routes: set = set(), ignore_threshold: int = 3, 
-        with_return: bool = True, proxy: str | bool | None = None) -> None:
+        self, 
+        targets: list[str | Airport | Route], 
+        flight_date: date = date.today() + timedelta(1), 
+        days: int = 1, 
+        day_limit: int = 0, 
+        ignore_routes: set = set(), 
+        ignore_threshold: int = 3, 
+        with_return: bool = True, 
+        proxy: str | bool | None = None) -> None:
 
         self.routes, cities = [], []
         for item in targets:
@@ -174,6 +179,7 @@ class CtripCrawler():
         self.avg = 2.9 if with_return else 1.3
         self.with_return = with_return
         self.limits = self.__threshold if self.__threshold else 1
+        self.file = None
 
         if proxy is False:
             self.__proxy == False
@@ -212,25 +218,25 @@ class CtripCrawler():
 
     @staticmethod
     def referers(route: Route) -> str:
-        seed = 10 * random()
-        if seed > 5:
+        rand = 10 * random()
+        if rand > 5:
             dates = date.today() + timedelta(int(30 * random()))
             route = route.returns if random() > 0.5 else route
-            if seed > 8:
+            if rand > 8:
                 return "https://flights.ctrip.com/online/channel/domestic"
-            elif seed > 6:
+            elif rand > 6:
                 return f"https://flights.ctrip.com/online/list/oneway-{route.format()}?depdate={dates}"
             else:
                 return "https://www.ctrip.com/"
         else:
             query = f"{route.dep.city} {route.arr.city} 机票" if random() > 0.5 else f"{route.dep.city}到{route.arr.city}机票"
-            if seed > 4:
+            if rand > 4:
                 return "https://cn.bing.com/search?" + urlencode({"q": query})
-            elif seed > 3:
+            elif rand > 3:
                 return "https://www.sogou.com/web?" + urlencode({"query": query})
-            elif seed > 2:
+            elif rand > 2:
                 return "https://www.so.com/s?" + urlencode({"ie": "utf8", "q": query})
-            elif seed > 1:
+            elif rand > 1:
                 return "https://www.baidu.com/s?" + urlencode({"wd": query})
             else:
                 return "https://www.sogou.com/tx?" + urlencode({"ie": "utf8", "query": query})
@@ -296,7 +302,7 @@ class CtripCrawler():
             if len(datarows):
                 datarows.sort(key = lambda x: x[6])
         except JSONDecodeError:
-            response.close
+            response.close()
             flag = code, 'Not a json response ' + url if url != self.url else ''
         except RequestException or Timeout:
             flag = 0, 'Timeout'
@@ -550,6 +556,8 @@ class CtripSearcher(CtripCrawler):
     """
     Ctrip flight tickets crawler using batch search method.
     
+    API: https://flights.ctrip.com/international/search/api/search/batchSearch
+    
     Parameters see class `CtripCrawler`
     """
     def __init__(self, **kwargs) -> None:
@@ -564,7 +572,7 @@ class CtripSearcher(CtripCrawler):
         random_id = ""
         for _ in range(6):
             random_id += choice(random_str)
-        t = str(int(round(floattime() * 1000)))
+        t = str(int(round(datetime.now().timestamp() * 1000)))
         return "_bfa={}".format(".".join(["1", t, random_id, "1", t, t, "1", "1"]))
 
     @staticmethod
@@ -583,7 +591,7 @@ class CtripSearcher(CtripCrawler):
             return "", None
         try:
             data = response.json().get("data")
-            response.close
+            response.close()
             return data["transactionID"], data
         except Exception as error:
             print("  WARN: get transaction id failed,", error, end = '')
@@ -608,8 +616,9 @@ class CtripSearcher(CtripCrawler):
 
         try:
             response = post(self.url, data = dumps(data), headers = self.header, proxies = self.proxy(), timeout = 10)
-            routeList, code, url = response.json(), response.status_code, response.url
-            response.close
+            code, url = response.status_code, response.url
+            routeList = response.json()
+            response.close()
             flag = code, 'V2'
             if routeList["data"]["context"]["flag"] == 0:
                 routeList = routeList.get('data').get('flightItineraryList')
@@ -652,6 +661,7 @@ class CtripSearcher(CtripCrawler):
                     print(f"  WARN: {error} in {dcity}-{acity} {flight_date.strftime('%m/%d')}")
                     self.warn += 1
         except JSONDecodeError:
+            response.close()
             flag = code, 'Not a json response ' + url if url != self.url else ''
         except Timeout or RequestException:
             flag = 0, 'Timeout'
@@ -668,16 +678,14 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
     '''
     def __init__(self, method: CtripSearcher | CtripCrawler = CtripCrawler, **kwargs) -> None:
         method.__init__(self, **kwargs)
-        dates = list((self.flight_date + timedelta(i)) for i in range(self.days))
         self.itineraries = []
-        for route in self.routes:
-            for flight_date in dates:
-                self.itineraries.append((flight_date, route))
-                if self.with_return:
-                    self.itineraries.append((flight_date, route.returns))
+        for flight_date in ((self.flight_date + timedelta(i)) for i in range(self.days)):
+            self.itineraries += list((flight_date, route) for route in self.routes)
+            if self.with_return:
+                self.itineraries += list((flight_date, route.returns) for route in self.routes)
         self.avg = 1.4
     
-    def run(self, tempfile: Path | str | None, **kwargs):
+    def run(self, tempfile: Path | str, **kwargs):
         '''
         Collect Parameters
         -----
@@ -690,16 +698,17 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
         
         Running Parameters
         -----
-        - tempfile: `Path` | 'str', where the data stores.
-        - randomseed: int | None, seed of randomizing itineraries, default: `date.today().toordinal() % 10`
+        - tempfile: `Path | str`, where the data stores.
+        - skips: `List-like | Set-like`, itineraries to be skiped in format of 
+        `f'{Route.format()} {date}' | tuple[date, Route]`.
+        - randomseed: `int | None`, seed of randomizing itineraries, 
+        default: `date.today().toordinal() % 100`
         '''
         
         header = ['flight_date', 'dow', 'airlineName', 'craftType', 'departureName', 'arrivalName', 
                   'departureTime', 'arrivalTime', 'price', 'rate', 'itinerary']
         if Path(tempfile).exists():
-            tempdata = read_csv(Path(tempfile))
-            exist = tempdata['itinerary'].unique()
-            del tempdata
+            exist = read_csv(Path(tempfile))['itinerary'].unique()
         else:
             DataFrame(columns = header).to_csv(Path(tempfile), index = False)
             exist = []
@@ -708,11 +717,13 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
         part: int = kwargs.get('part', 1)
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
-        randomseed: int | None = kwargs.get('randomseed', date.today().toordinal() % 10)
+        randomseed: int | None = kwargs.get('randomseed', date.today().toordinal() % 100)
+        skips: kwargs.get('skips', [])
         
         itineraries = []
         for itinerary in self.itineraries:
-            if f'{itinerary[1].format()} {itinerary[0]}' not in exist:
+            formatted = f'{itinerary[1].format()} {itinerary[0]}'
+            if formatted not in exist and formatted not in skips and itinerary not in skips:
                 itineraries.append(itinerary)
         seed(randomseed)
         itineraries.sort(key = lambda x: random())
@@ -746,7 +757,8 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
                         exit(0)
                     flag, datarow = self.collector(*itinerary)
                 if len(datarow) >= self.limits or (itinerary[0] != self.flight_date and len(datarow)):
-                    DataFrame(datarow).assign(itinerary = f'{itinerary[1].format()}').to_csv(
+                    DataFrame(datarow).assign(
+                        itinerary = f'{itinerary[1].format()} {itinerary[0]}').to_csv(
                         tempfile, mode = 'a', header = False, index = False)
                     break
                 elif dep in noretry or arr in noretry:
@@ -758,10 +770,9 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
                     self.warn += 1
             
             self.idct += 1
-            self.avg = (datetime.now().timestamp() - curr + self.avg \
-                * (self.total - 1)) / self.total
+            self.avg = (datetime.now().timestamp() - curr + self.avg * (self.total - 1)) / self.total
     
-    def organize(self, *tempfile: Path | str | None, **kwargs) -> Generator:
+    def organize(self, *tempfile: Path | str, **kwargs) -> Generator:
         '''
         Transfer temporary csv files `*tempfile` to `CtripCrawler` base output excels.
         Same as Ctrip Crawler Output Parameters: `path`, `values_only`, `with_return`
@@ -770,26 +781,28 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
         path.mkdir(parents = True, exist_ok = True)
         headers = ['flight_date', 'dow', 'airlineName', 'craftType', 'departureName', 'arrivalName', 
                    'departureTime', 'arrivalTime', 'price', 'rate']
-        for file in tempfile:
-            tempdata = read_csv(Path(file))
-            tempdata['flight_date'] = tempdata['flight_date'].map(date.fromisoformat)
-            tempdata['departureTime'] = tempdata['departureTime'].map(time.fromisoformat)
-            tempdata['arrivalTime']= tempdata['arrivalTime'].map(time.fromisoformat)
-            tempdata['route'] = (tempdata['departureName'].map(Airport) - \
-                tempdata['arrivalName'].map(Airport)).map(lambda x: x.separates('code'))
-            groups = tempdata.groupby(['route'])
-            rroutes = []
-            for route in tempdata['route'].unique():
-                group = groups.get_group(route).sort_values('flight_date')[headers].to_numpy().tolist()
-                if kwargs.get('with_return', True):
-                    if route in rroutes:
-                        continue
-                    rroute = (route[1], route[0])
-                    rroutes.append(rroute)
-                    group += groups.get_group(rroute).sort_values('flight_date')[headers].to_numpy().tolist()
+
+        tempdata = concat(list(read_csv(Path(file)) for file in tempfile)) \
+            if len(tempfile) > 1 else read_csv(Path(*tempfile))
+        tempdata['flight_date'] = tempdata['flight_date'].map(date.fromisoformat)
+        tempdata['departureTime'] = tempdata['departureTime'].map(time.fromisoformat)
+        tempdata['arrivalTime']= tempdata['arrivalTime'].map(time.fromisoformat)
+        tempdata['route'] = (tempdata['departureName'].map(Airport) - \
+            tempdata['arrivalName'].map(Airport)).map(lambda x: x.separates('code'))
+        groups = tempdata.groupby(['route'])
+        rroutes = []
+        for route in tempdata['route'].unique():
+            group = groups.get_group(route).sort_values('flight_date')[headers].to_numpy().tolist()
+            if self.with_return:
+                if route in rroutes:
+                    continue
+                rroute = (route[1], route[0])
+                rroutes.append(rroute)
+                group += groups.get_group(rroute).sort_values('flight_date')[headers].to_numpy().tolist()
+            if kwargs.get('with_output', True):
                 self.file = self.output_excel(
-                    group, *route, path, kwargs.get('values_only', False), kwargs.get('with_return', True))
-                yield group
+                    group, *route, path, kwargs.get('values_only', False), self.with_return)
+            yield group
 
 
 if __name__ == "__main__":
