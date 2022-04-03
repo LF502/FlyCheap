@@ -6,18 +6,14 @@ from ctripcrawler import ItineraryCollector
 from pandas import DataFrame
 
 if __name__ == "__main__":
-    date_coll = date.today().isoformat()
+    date_coll = date.today()
     paths, files = [], {}
     header = (
         'date_flight', 'day_week', 'airline', 'type', 'dep', 
         'arr', 'time_dep', 'time_arr', 'price', 'price_rate')
     for path in Path().iterdir():
-        if path.is_dir():
-            path = path / Path(date_coll)
-            if path.exists():
-                paths.append(path)
-        elif path.is_file():
-            if path.suffix == '.csv' and date_coll in path.stem and 'temp' in path.stem:
+        if path.is_file():
+            if path.suffix == '.csv' and date_coll.isoformat() in path.stem and 'temp' in path.stem:
                 key = path.stem.split('_', 4)[1]
                 if files.get(key):
                     files[key].append(path)
@@ -30,9 +26,9 @@ if __name__ == "__main__":
         merged = Path('merged_' + key + '.csv')
         for data in collector.organize(*file):
             try:
-                data = DataFrame(data, columns = header).assign(date_coll = date_coll)
+                data = DataFrame(data, columns = header).assign(date_coll = date_coll.toordinal())
                 data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
-                data['day_adv'] = data['date_flight'] - date_coll
+                data['day_adv'] = data['date_flight'] - date_coll.toordinal()
                 data['hour_dep'] = data['time_dep'].map(lambda x: x.hour if x.hour else 24)
                 data['route'] = data['dep'].map(Airport) + data['arr'].map(Airport)
             except:
@@ -40,6 +36,12 @@ if __name__ == "__main__":
                 continue
             kwargs = {'mode': 'a', 'header': False} if merged.exists() else {}
             data.to_csv(merged, index = False, **kwargs)
+    
+    for path in Path().iterdir():
+        if path.is_dir():
+            path = path / Path(date_coll.isoformat())
+            if path.exists():
+                paths.append(path)
     
     for path in paths:
         orig_folder = path / Path(".orig")

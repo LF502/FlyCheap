@@ -444,21 +444,16 @@ class CtripCrawler():
                 '''Get OUTbound flights data, attempts for ample data'''
                 for _ in range(attempt):
                     flag, datarow = self.collector(collect_date, route)
-                    if flag[1] == 'Timeout':
-                        for _ in range(attempt):
-                            flag, datarow = self.collector(collect_date, route)
-                            if flag == (200, 'V2'):
-                                break
-                            else:
-                                sleep(random())
-                        else:
-                            print(' ...timeout', end = '')
                     while flag[1] != 'V2':
-                        try:
-                            print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
-                            input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
-                        except EOFError:
-                            exit(0)
+                        if flag[1] == 'Timeout':
+                            print('  ...timeout', end = '')
+                            sleep(5)
+                        else:
+                            try:
+                                print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
+                                input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
+                            except EOFError:
+                                exit(0)
                         flag, datarow = self.collector(collect_date, route)
                     if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow)):
                         if collect_date > last_date:
@@ -484,21 +479,16 @@ class CtripCrawler():
                 if self.with_return:
                     for _ in range(attempt):
                         flag, datarow = self.collector(collect_date, route.returns)
-                        if flag[1] == 'Timeout':
-                            for _ in range(attempt):
-                                flag, datarow = self.collector(collect_date, route)
-                                if flag == (200, 'V2'):
-                                    break
-                                else:
-                                    sleep(random())
-                            else:
-                                print(' ...timeout', end = '')
                         while flag[1] != 'V2':
-                            try:
-                                print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
-                                input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
-                            except EOFError:
-                                exit(0)
+                            if flag[1] == 'Timeout':
+                                print('  ...timeout', end = '')
+                                sleep(5)
+                            else:
+                                try:
+                                    print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
+                                    input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
+                                except EOFError:
+                                    exit(0)
                             flag, datarow = self.collector(collect_date, route)
                         if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow) > 0):
                             if collect_date > last_date:
@@ -670,14 +660,14 @@ class CtripSearcher(CtripCrawler):
         finally:
             return flag, datarows
 
-class ItineraryCollector(CtripSearcher, CtripCrawler):
+class ItineraryCollector(CtripCrawler):
     '''
     Collect itineraries (route - date) in an random order.
     
     Parameters see class `CtripCrawler`
     '''
-    def __init__(self, method: CtripSearcher | CtripCrawler = CtripCrawler, **kwargs) -> None:
-        method.__init__(self, **kwargs)
+    def __init__(self, **kwargs) -> None:
+        CtripCrawler.__init__(self, **kwargs)
         self.itineraries = []
         for flight_date in ((self.flight_date + timedelta(i)) for i in range(self.days)):
             self.itineraries += list((flight_date, route) for route in self.routes)
@@ -711,19 +701,18 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
             exist = read_csv(Path(tempfile))['itinerary'].unique()
         else:
             DataFrame(columns = header).to_csv(Path(tempfile), index = False)
-            exist = []
         
         parts: int = kwargs.get('parts', 1)
         part: int = kwargs.get('part', 1)
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
         randomseed: int | None = kwargs.get('randomseed', date.today().toordinal() % 100)
-        skips: kwargs.get('skips', [])
+        skips = set(kwargs.get('skips')) | set(exist if 'exist' in dir() else None)
         
         itineraries = []
         for itinerary in self.itineraries:
             formatted = f'{itinerary[1].format()} {itinerary[0]}'
-            if formatted not in exist and formatted not in skips and itinerary not in skips:
+            if formatted not in skips and itinerary not in skips:
                 itineraries.append(itinerary)
         seed(randomseed)
         itineraries.sort(key = lambda x: random())
@@ -740,25 +729,20 @@ class ItineraryCollector(CtripSearcher, CtripCrawler):
             curr = self.show_progress(dep, arr, itinerary[0])
             for _ in range(attempt):
                 flag, datarow = self.collector(*itinerary)
-                if flag[1] == 'Timeout':
-                    for _ in range(attempt):
-                        flag, datarow = self.collector(*itinerary)
-                        if flag == (200, 'V2'):
-                            break
-                        else:
-                            sleep(random())
-                    else:
-                        print(' ...timeout', end = '')
                 while flag[1] != 'V2':
-                    try:
-                        print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
-                        input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
-                    except EOFError:
-                        exit(0)
+                    if flag[1] == 'Timeout':
+                        print('  ...timeout', end = '')
+                        sleep(5)
+                    else:
+                        try:
+                            print('  WARN: code {0} [200], {1} [V2]'.format(*flag))
+                            input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
+                        except EOFError:
+                            exit(0)
                     flag, datarow = self.collector(*itinerary)
                 if len(datarow) >= self.limits or (itinerary[0] != self.flight_date and len(datarow)):
                     DataFrame(datarow).assign(
-                        itinerary = f'{itinerary[1].format()} {itinerary[0]}').to_csv(
+                        itinerary = f'{dep}-{arr} {itinerary[0]}').to_csv(
                         tempfile, mode = 'a', header = False, index = False)
                     break
                 elif dep in noretry or arr in noretry:

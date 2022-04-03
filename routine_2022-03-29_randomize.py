@@ -22,7 +22,7 @@ if __name__ == "__main__":
         'days': 45, 'day_limit': 45}
     
     sys.stdout = Log(f"{flight_date}_{date.today()}.log")
-    crawler = ItineraryCollector(CtripCrawler, **kwargs)
+    crawler = ItineraryCollector(**kwargs)
     
     parser = ArgumentParser()
     parser.add_argument("--part", type = int, default = 1)
