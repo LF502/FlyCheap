@@ -445,8 +445,8 @@ class CtripCrawler():
                 for _ in range(attempt):
                     flag, datarow = self.collector(collect_date, route)
                     while flag[1] != 'V2':
-                        if flag[1] == 'Timeout':
-                            print('  ...timeout', end = '')
+                        if flag[1] == 'Timeout' or flag[0] != 200:
+                            print('  ...timeout, code: ', end = flag[0])
                             sleep(5)
                         else:
                             try:
@@ -480,8 +480,8 @@ class CtripCrawler():
                     for _ in range(attempt):
                         flag, datarow = self.collector(collect_date, route.returns)
                         while flag[1] != 'V2':
-                            if flag[1] == 'Timeout':
-                                print('  ...timeout', end = '')
+                            if flag[1] == 'Timeout' or flag[0] != 200:
+                                print('  ...timeout, code: ', end = flag[0])
                                 sleep(5)
                             else:
                                 try:
@@ -698,23 +698,23 @@ class ItineraryCollector(CtripCrawler):
         header = ['flight_date', 'dow', 'airlineName', 'craftType', 'departureName', 'arrivalName', 
                   'departureTime', 'arrivalTime', 'price', 'rate', 'itinerary']
         if Path(tempfile).exists():
-            exist = read_csv(Path(tempfile))['itinerary'].unique()
+            skips = set(read_csv(Path(tempfile))['itinerary'].unique())
         else:
             DataFrame(columns = header).to_csv(Path(tempfile), index = False)
+            skips = set()
         
         parts: int = kwargs.get('parts', 1)
         part: int = kwargs.get('part', 1)
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
-        randomseed: int | None = kwargs.get('randomseed', date.today().toordinal() % 100)
-        skips = set(kwargs.get('skips')) | set(exist if 'exist' in dir() else None)
+        skips |= set(kwargs.get('skips', []))
         
         itineraries = []
         for itinerary in self.itineraries:
             formatted = f'{itinerary[1].format()} {itinerary[0]}'
             if formatted not in skips and itinerary not in skips:
                 itineraries.append(itinerary)
-        seed(randomseed)
+        seed(kwargs.get('randomseed', date.today().toordinal() % 100))
         itineraries.sort(key = lambda x: random())
         try:
             if part > 0 and parts > 1:
@@ -723,6 +723,7 @@ class ItineraryCollector(CtripCrawler):
                     else itineraries[(part - 1) * part_len : part * part_len]
         finally:
             self.total = len(itineraries)
+            collected = 0
         
         for itinerary in itineraries:
             dep, arr = itinerary[1].separates('code')
@@ -730,8 +731,8 @@ class ItineraryCollector(CtripCrawler):
             for _ in range(attempt):
                 flag, datarow = self.collector(*itinerary)
                 while flag[1] != 'V2':
-                    if flag[1] == 'Timeout':
-                        print('  ...timeout', end = '')
+                    if flag[1] == 'Timeout' or flag[0] != 200:
+                        print('  ...timeout, code: ', end = flag[0])
                         sleep(5)
                     else:
                         try:
@@ -744,6 +745,7 @@ class ItineraryCollector(CtripCrawler):
                     DataFrame(datarow).assign(
                         itinerary = f'{dep}-{arr} {itinerary[0]}').to_csv(
                         tempfile, mode = 'a', header = False, index = False)
+                    collected += 1
                     break
                 elif dep in noretry or arr in noretry:
                     print(f" ...few data in {dep}-{arr} {itinerary[0].strftime('%m/%d')}")
@@ -755,6 +757,8 @@ class ItineraryCollector(CtripCrawler):
             
             self.idct += 1
             self.avg = (datetime.now().timestamp() - curr + self.avg * (self.total - 1)) / self.total
+        else:
+            print(f'{collected} itineraries collected in {tempfile}')
     
     def organize(self, *tempfile: Path | str, **kwargs) -> Generator:
         '''
