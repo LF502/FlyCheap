@@ -446,7 +446,7 @@ class CtripCrawler():
                     flag, datarow = self.collector(collect_date, route)
                     while flag[1] != 'V2':
                         if flag[1] == 'Timeout' or flag[0] != 200:
-                            print('  ...timeout, code: ', end = flag[0])
+                            print(f'  ...timeout, code: {flag[0]}', end = '')
                             sleep(5)
                         else:
                             try:
@@ -454,6 +454,7 @@ class CtripCrawler():
                                 input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
                             except EOFError:
                                 exit(0)
+                        curr = datetime.now().timestamp()
                         flag, datarow = self.collector(collect_date, route)
                     if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow)):
                         if collect_date > last_date:
@@ -481,7 +482,7 @@ class CtripCrawler():
                         flag, datarow = self.collector(collect_date, route.returns)
                         while flag[1] != 'V2':
                             if flag[1] == 'Timeout' or flag[0] != 200:
-                                print('  ...timeout, code: ', end = flag[0])
+                                print(f'  ...timeout, code: {flag[0]}', end = '')
                                 sleep(5)
                             else:
                                 try:
@@ -489,6 +490,7 @@ class CtripCrawler():
                                     input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
                                 except EOFError:
                                     exit(0)
+                            curr = datetime.now().timestamp()
                             flag, datarow = self.collector(collect_date, route)
                         if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow) > 0):
                             if collect_date > last_date:
@@ -716,6 +718,7 @@ class ItineraryCollector(CtripCrawler):
                 itineraries.append(itinerary)
         seed(kwargs.get('randomseed', date.today().toordinal() % 100))
         itineraries.sort(key = lambda x: random())
+        seed()  # reset all random
         try:
             if part > 0 and parts > 1:
                 part_len = int(len(itineraries) / parts)
@@ -732,7 +735,7 @@ class ItineraryCollector(CtripCrawler):
                 flag, datarow = self.collector(*itinerary)
                 while flag[1] != 'V2':
                     if flag[1] == 'Timeout' or flag[0] != 200:
-                        print('  ...timeout, code: ', end = flag[0])
+                        print(f'  ...timeout, code: {flag[0]}', end = '')
                         sleep(5)
                     else:
                         try:
@@ -740,6 +743,7 @@ class ItineraryCollector(CtripCrawler):
                             input('\r\nContinue (Any) / Exit (*nix: Ctrl-D, Windows: Ctrl-Z+Return): ')
                         except EOFError:
                             exit(0)
+                    curr = datetime.now().timestamp()
                     flag, datarow = self.collector(*itinerary)
                 if len(datarow) >= self.limits or (itinerary[0] != self.flight_date and len(datarow)):
                     DataFrame(datarow).assign(

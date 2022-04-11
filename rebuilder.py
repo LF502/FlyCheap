@@ -5,17 +5,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 from zipfile import ZipFile
 from pathlib import Path
 from civilaviation import Airport, Route
 from warnings import filterwarnings
-
-_cheapAir = {
-    '长龙航空', '天津航', '龙江航空', '首都航', '乌航', '幸福航空', '北部湾航', 
-    '西部航', '成都航空', '多彩航空', '福航', '九元航空', '金鹏航', '湖南航空', 
-    '青岛航空', '长安航', '桂林航', '奥凯航空', '春秋航空', '中国联合航空', '祥鹏航空'
-    }
 
 class Rebuilder():
     '''
@@ -77,6 +71,11 @@ class Rebuilder():
     set_date = "mm\"-\"dd"
     set_percent = "0.00%"
     index_name = '索引-INDEX'
+    cheapAir = {
+        '长龙航空', '天津航', '龙江航空', '首都航', '乌航', '幸福航空', '北部湾航', 
+        '西部航', '成都航空', '多彩航空', '福航', '九元航空', '金鹏航', '湖南航空', 
+        '青岛航空', '长安航', '桂林航', '奥凯航空', '春秋航空', '中国联合航空', '祥鹏航空'
+    }
     
     def __init__(self, root: Path | str = Path(), 
                  starting_date: date | tuple | int = 0, day_limit: int = 0) -> None:
@@ -663,7 +662,7 @@ class Rebuilder():
         '''Route overview'''
         if not len(self.__merge):
             self.__merge = self.merge()
-        data = self.__merge.copy(False)
+        data = self.__merge.copy()
         
         if 'density_day' not in data.keys():
             data['density_day'] = data.groupby(["date_flight", \
@@ -922,7 +921,7 @@ class Rebuilder():
         '''Airline overview'''
         if not len(self.__merge):
             self.__merge = self.merge()
-        data = self.__merge.copy(False)
+        data = self.__merge.copy()
         
         if 'ratio_daily' not in data.keys():
             data['ratio_daily'] = data["price_rate"] / data.groupby(["date_coll", \
@@ -1127,9 +1126,84 @@ class Rebuilder():
         wb.close()
     
     
-    def preprocess(self, path: Path | str | None = None, scaler: bool = True):
-        pass
-    
+    def preprocess(self, scaler: bool = True):
+        '''
+        Returns a preprocessed merged data
+        '''
+        if not len(self.__merge):
+            self.__merge = self.merge()
+        data = self.__merge.copy()
+        data['date_flight'] = data['date_flight'].map(date.fromordinal)
+        data['date_coll'] = data['date_coll'].map(date.fromordinal)
+        data['time_arr'] = data['time_arr'].map(time.fromisoformat)
+        data['time_dep'] = data['time_dep'].map(time.fromisoformat)
+        
+        '''month'''
+        data['month'] = data['date_flight'].map(lambda x: x.month)
+        if data['month'].max() - data['month'].min() and scaler:
+                data['month'] = data['month'].map(lambda x: x - \
+                    data['month'].min() / data['month'].max() - data['month'].min())
+        
+        '''days advanced'''
+        if scaler:
+            data['day_adv'] = data['day_adv'].map(lambda x: x - \
+                data['day_adv'].min() / data['day_adv'].max() - data['day_adv'].min())
+        
+        '''day of week'''
+        data['mon'] = data['day_week'].map(lambda x: 1 if x == '星期一' else 0)
+        data['mid'] = data['day_week'].map(lambda x: \
+            1 if x == '星期二' or x == '星期三' or x == '星期四' else 0)
+        data['fri'] = data['day_week'].map(lambda x: 1 if x == '星期五' else 0)
+        data['sat'] = data['day_week'].map(lambda x: 1 if x == '星期六' else 0)
+        data['sun'] = data['day_week'].map(lambda x: 1 if x == '星期日' else 0)
+        
+        '''time cost calculation + stopover'''
+        hm_hr = lambda h, m: round(h + m / 60, 2)
+        data['time_cost'] = list(hm_hr(*divmod((
+            (datetime(x.year, x.month, x.day, y.hour, y.minute) if y.hour >= z.hour else \
+             datetime((x + timedelta(1)).year, (x + timedelta(1)).month, (x + timedelta(1)).day, y.hour, y.minute)) \
+             - datetime(x.year, x.month, x.day, z.hour, z.minute)).seconds // 60, 60)) \
+             for x, y, z in data[['date_flight', 'time_arr', 'time_dep']].values)
+        data['stopover'] = (data['time_cost'] - data.groupby(
+            ['dep', 'arr'])['time_cost'].transform('min')).map(lambda x: 1 if x > 1 else 0)
+        
+        '''market share calculation'''
+        data['share'] = data.groupby(['route', 'date_coll', 'date_flight', 'airline'])['airline'].transform('count') \
+            / data.groupby(['route', 'date_coll', 'date_flight'])['airline'].transform('count')
+        if scaler:
+            data['share'] = data['share'].map(lambda x: x - \
+                data['share'].min() / data['share'].max() - data['share'].min())
+        
+        '''airline type'''
+        state = {'中国国航', '东方航空', '南方航空', '海南航空'}
+        data['cheap'] = data['airline'].map(lambda x: 0 if x in self.cheapAir else 1)
+        data['state'] = data['airline'].map(lambda x: 1 if x in state else 0)
+        
+        '''cheap airlines count'''
+        data['cheaphour'] = data.groupby(['route', 'date_flight', 'hour_dep'])['airline'].transform(
+            lambda x: len(set(x.unique()) & self.cheapAir))
+        if scaler:
+            data['cheap'] = data['cheap'].map(lambda x: x - \
+                data['cheap'].min() / data['cheap'].max() - data['cheap'].min())
+        
+        '''time density'''
+        data['density'] = data.groupby(['route', 'date_coll', 'date_flight', 'hour_dep'])['hour_dep'].transform('count') \
+            / data.groupby(['route', 'date_coll', 'date_flight'])['hour_dep'].transform('count')
+        if scaler:
+            data['density'] = data['density'].map(lambda x: x - \
+                data['density'].min() / data['density'].max() - data['density'].min())
+        
+        '''time range'''
+        data['time'] = data['time_dep'].map(lambda x: (x.hour if x.hour else 24) + \
+            round(x.minute / 60, 2)).map(lambda x: round((x - 5) / 5, 2) if x < 10 \
+                else round((24 - x) / 8, 2) if x > 16 else 1)
+        
+        return data[['route', 'dep', 'arr', 'month', 
+                     'day_adv', 'mon', 'mid', 'fri', 'sat', 'sun', 
+                     'stopover', 'share', 'cheap', 'state', 'cheaphour', 
+                     'density', 'time', 'price_rate', 'price']]
+
+
     def month(self, year: int = 0, month: int = 0, limit: int = 5, 
               path: Path | str = Path(), file: str = ''):
         '''Calculate pearson correlation coefficient of tickets rate before `year`.`month`'''
@@ -1160,9 +1234,9 @@ class Rebuilder():
         
         overview = wb.create_sheet('总览')
         ov_title = sorted(data['airline'].unique(), reverse = True, 
-            key = lambda x: len(data.loc[data['airline'] == x]))
+            key = lambda x: len(self.__merge.loc[self.__merge['airline'] == x]))
         ov_index = sorted(data['route'].unique(), reverse = True, 
-            key = lambda x: len(data.loc[data['route'] == x]))
+            key = lambda x: len(self.__merge.loc[self.__merge['route'] == x]))
         overview.cell(1, 1, '航线').font = self.set_bold
         overview.column_dimensions['A'].width = 13
         overview.freeze_panes = 'B2'
@@ -1325,7 +1399,7 @@ class Rebuilder():
         if not len(self.__merge):
             self.__merge = self.merge()
         data = self.__merge[self.__merge['day_adv'].isin(
-            tuple(range(start if start > 0 else 1, end if end > 0 else self.__merge['day_adv'].max() + 1))
+            tuple(range(start if start > 0 else 1, end + 1 if end > 0 else self.__merge['day_adv'].max() + 1))
         )].reset_index()
         
         wb = self.indexbook(airlines = True)
@@ -1343,9 +1417,9 @@ class Rebuilder():
         
         overview = wb.create_sheet('总览')
         ov_title = sorted(data['airline'].unique(), reverse = True, 
-            key = lambda x: len(data.loc[data['airline'] == x]))
+            key = lambda x: len(self.__merge.loc[self.__merge['airline'] == x]))
         ov_index = sorted(data['route'].unique(), reverse = True, 
-            key = lambda x: len(data.loc[data['route'] == x]))
+            key = lambda x: len(self.__merge.loc[self.__merge['route'] == x]))
         overview.cell(1, 1, '航线').font = self.set_bold
         overview.column_dimensions['A'].width = 13
         overview.freeze_panes = 'B2'
@@ -1441,7 +1515,7 @@ class Rebuilder():
                 else:
                     cell.font = self.set_bold
             ws.freeze_panes = 'G2'
-            for flt, flts in routes.groupby(['date_coll']):
+            for flt, flts in routes.groupby(['date_flight']):
                 if len(flts) <= 1:
                     continue
                 corr = flts['price_rate'].corr(flts['day_adv'], 'pearson')
@@ -1683,3 +1757,16 @@ class Rebuilder():
         wb.remove(wb.active)
         wb.save(path / Path(file))
         wb.close()
+
+if __name__ == '__main__':
+    rebuild = Rebuilder('2022-2-17')
+    rebuild.append_data('dataset_filtered.csv')
+    rebuild.adv(1, 7, '.charts', '提前天数相关系数1-7')
+    rebuild.adv(1, 5, '.charts', '提前天数相关系数1-5')
+    rebuild.adv(5, 10, '.charts', '提前天数相关系数5-10')
+    rebuild.adv(7, 14, '.charts', '提前天数相关系数7-14')
+    rebuild.adv(10, 15, '.charts', '提前天数相关系数10-15')
+    rebuild.adv(14, 30, '.charts', '提前天数相关系数14-30')
+    rebuild.adv(14, 21, '.charts', '提前天数相关系数14-21')
+    rebuild.adv(21, 30, '.charts', '提前天数相关系数21-30')
+    rebuild.adv(30, 0, '.charts', '提前天数相关系数30-')
