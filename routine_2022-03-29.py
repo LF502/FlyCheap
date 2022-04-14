@@ -1,27 +1,42 @@
 from ctripcrawler import CtripCrawler
 from civilaviation import Airport, skipped_routes
-from datetime import date
-from __init__ import Log
+from datetime import date, datetime
 from argparse import ArgumentParser
 from pathlib import Path
+from time import time
+from pandas import DataFrame
 import sys
-import pandas
+
+class Log():
+    def __init__(self, logfile: str):
+        self.terminal = sys.stdout
+        self.log = open(logfile, "a", encoding = 'UTF-8',)
+ 
+    def write(self, message):
+        self.terminal.write(message)
+        if message.startswith("\n") or message.endswith("\n"):
+            self.log.write("\n" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + "\n")
+        self.log.write(message)
+    def flush(self):
+        pass
 
 if __name__ == "__main__":
 
-    targets = ["BJS", "TSN", "SHE", "HRB", "CGO", "SJW", 
-              "SHA", "NKG", "HGH", "CZX", "WUX", "HFE", 
-              "CAN", "SYX", "HAK", "SZX", "XMN", "CSX", 
-              "CTU", "CKG", "KMG", "XIY", "LHW", "INC", 
-              "URC", "FOC", "TAO", "DLC", "WUH", "CGQ", ]
     flight_date = date(2022, 3, 29)
-    ignore_threshold = 0
-    ignore_cities = skipped_routes
-    
-    parameters = (targets, flight_date, 45, 46, ignore_cities, ignore_threshold)
+    kwargs = {
+        'targets': [
+            "BJS", "TSN", "SHE", "HRB", "CGO", "SJW", 
+            "SHA", "NKG", "HGH", "CZX", "WUX", "HFE", 
+            "CAN", "SYX", "HAK", "SZX", "XMN", "CSX", 
+            "CTU", "CKG", "KMG", "XIY", "LHW", "INC", 
+            "URC", "FOC", "TAO", "DLC", "WUH", "CGQ", ], 
+        'flight_date': flight_date, 
+        'ignore_threshold': 0, 
+        'ignore_routes': skipped_routes, 
+        'days': 45, 'day_limit': 45}
     
     sys.stdout = Log(f"{flight_date.isoformat()}_{date.today().isoformat()}.log")
-    crawler = CtripCrawler(*parameters)
+    crawler = CtripCrawler(**kwargs)
     
     parser = ArgumentParser()
     parser.add_argument("--part", type = int, default = 1)
@@ -34,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--noretry", type = str, action = 'append', default = [])
     kwargs = vars(parser.parse_args())
     
-    date_coll = pandas.Timestamp.today().date()
+    date_coll = datetime.today().date()
     name = f"{flight_date.isoformat()}_{date_coll.isoformat()}_{kwargs['part']}_{kwargs['parts']}"
     file = Path('merging_' + name + '.csv')
     date_coll = date_coll.toordinal()
@@ -45,7 +60,7 @@ if __name__ == "__main__":
     
     for data in crawler.run(**kwargs):
         try:
-            data = pandas.DataFrame(data, columns = header).assign(date_coll = date_coll)
+            data = DataFrame(data, columns = header).assign(date_coll = date_coll)
             data['date_flight'] = data['date_flight'].map(lambda x: x.toordinal())
             data['day_adv'] = data['date_flight'] - date_coll
             data['hour_dep'] = data['time_dep'].map(lambda x: x.hour if x.hour else 24)

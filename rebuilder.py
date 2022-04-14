@@ -5,7 +5,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, timedelta
 from zipfile import ZipFile
 from pathlib import Path
 from civilaviation import Airport, Route
@@ -42,7 +42,7 @@ class Rebuilder():
     Merge all rebuilt data to `DataFrame`
         - Note: Save the merged data to a csv file manually for further usage.
     
-    Data
+    Load data
     -----
     - `append_file`: Append an excel file.
     - `append_folder`: Append excel files from folders in `Path`.
@@ -1124,85 +1124,6 @@ class Rebuilder():
         print("\r saving")
         wb.save(path / Path(file))
         wb.close()
-    
-    
-    def preprocess(self, scaler: bool = True):
-        '''
-        Returns a preprocessed merged data
-        '''
-        if not len(self.__merge):
-            self.__merge = self.merge()
-        data = self.__merge.copy()
-        data['date_flight'] = data['date_flight'].map(date.fromordinal)
-        data['date_coll'] = data['date_coll'].map(date.fromordinal)
-        data['time_arr'] = data['time_arr'].map(time.fromisoformat)
-        data['time_dep'] = data['time_dep'].map(time.fromisoformat)
-        
-        '''month'''
-        data['month'] = data['date_flight'].map(lambda x: x.month)
-        if data['month'].max() - data['month'].min() and scaler:
-                data['month'] = data['month'].map(lambda x: x - \
-                    data['month'].min() / data['month'].max() - data['month'].min())
-        
-        '''days advanced'''
-        if scaler:
-            data['day_adv'] = data['day_adv'].map(lambda x: x - \
-                data['day_adv'].min() / data['day_adv'].max() - data['day_adv'].min())
-        
-        '''day of week'''
-        data['mon'] = data['day_week'].map(lambda x: 1 if x == '星期一' else 0)
-        data['mid'] = data['day_week'].map(lambda x: \
-            1 if x == '星期二' or x == '星期三' or x == '星期四' else 0)
-        data['fri'] = data['day_week'].map(lambda x: 1 if x == '星期五' else 0)
-        data['sat'] = data['day_week'].map(lambda x: 1 if x == '星期六' else 0)
-        data['sun'] = data['day_week'].map(lambda x: 1 if x == '星期日' else 0)
-        
-        '''time cost calculation + stopover'''
-        hm_hr = lambda h, m: round(h + m / 60, 2)
-        data['time_cost'] = list(hm_hr(*divmod((
-            (datetime(x.year, x.month, x.day, y.hour, y.minute) if y.hour >= z.hour else \
-             datetime((x + timedelta(1)).year, (x + timedelta(1)).month, (x + timedelta(1)).day, y.hour, y.minute)) \
-             - datetime(x.year, x.month, x.day, z.hour, z.minute)).seconds // 60, 60)) \
-             for x, y, z in data[['date_flight', 'time_arr', 'time_dep']].values)
-        data['stopover'] = (data['time_cost'] - data.groupby(
-            ['dep', 'arr'])['time_cost'].transform('min')).map(lambda x: 1 if x > 1 else 0)
-        
-        '''market share calculation'''
-        data['share'] = data.groupby(['route', 'date_coll', 'date_flight', 'airline'])['airline'].transform('count') \
-            / data.groupby(['route', 'date_coll', 'date_flight'])['airline'].transform('count')
-        if scaler:
-            data['share'] = data['share'].map(lambda x: x - \
-                data['share'].min() / data['share'].max() - data['share'].min())
-        
-        '''airline type'''
-        state = {'中国国航', '东方航空', '南方航空', '海南航空'}
-        data['cheap'] = data['airline'].map(lambda x: 0 if x in self.cheapAir else 1)
-        data['state'] = data['airline'].map(lambda x: 1 if x in state else 0)
-        
-        '''cheap airlines count'''
-        data['cheaphour'] = data.groupby(['route', 'date_flight', 'hour_dep'])['airline'].transform(
-            lambda x: len(set(x.unique()) & self.cheapAir))
-        if scaler:
-            data['cheap'] = data['cheap'].map(lambda x: x - \
-                data['cheap'].min() / data['cheap'].max() - data['cheap'].min())
-        
-        '''time density'''
-        data['density'] = data.groupby(['route', 'date_coll', 'date_flight', 'hour_dep'])['hour_dep'].transform('count') \
-            / data.groupby(['route', 'date_coll', 'date_flight'])['hour_dep'].transform('count')
-        if scaler:
-            data['density'] = data['density'].map(lambda x: x - \
-                data['density'].min() / data['density'].max() - data['density'].min())
-        
-        '''time range'''
-        data['time'] = data['time_dep'].map(lambda x: (x.hour if x.hour else 24) + \
-            round(x.minute / 60, 2)).map(lambda x: round((x - 5) / 5, 2) if x < 10 \
-                else round((24 - x) / 8, 2) if x > 16 else 1)
-        
-        return data[['route', 'dep', 'arr', 'month', 
-                     'day_adv', 'mon', 'mid', 'fri', 'sat', 'sun', 
-                     'stopover', 'share', 'cheap', 'state', 'cheaphour', 
-                     'density', 'time', 'price_rate', 'price']]
-
 
     def month(self, year: int = 0, month: int = 0, limit: int = 5, 
               path: Path | str = Path(), file: str = ''):

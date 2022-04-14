@@ -2,7 +2,7 @@ __all__ = ('Airport', 'Route', 'skipped_routes', 'airport_throughput', 'city_cla
 
 from random import choice
 from warnings import warn
-from database import _airfare, _city, _greatcircle, _iata, _icao, _multi, _inactive, _low, \
+from _database import _airfare, _city, _greatcircle, _iata, _icao, _multi, _inactive, _low, \
     city_class, city_location, tourism, airport_throughput
 skipped_routes = _inactive | _low
 _temp = list(_iata.keys())

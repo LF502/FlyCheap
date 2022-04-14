@@ -38,7 +38,7 @@ class CtripCrawler():
     Methods
     -----
     `run`: Start the crawler in an order of route, flight date
-    `proxy`: Return a proxy dict by the pre-set proxy parameter
+    `proxy`: Return a proxy dict by the pre-set proxy parameter or ProxyPool
     
     See Also
     -----
@@ -312,7 +312,7 @@ class CtripCrawler():
             return flag, datarows
 
 
-    def show_progress(self, dcity: str, acity: str, dates: date = None) -> float:
+    def show_progress(self, dcity: str, acity: str, dates: date) -> float:
         '''Progress indicator with a current time (float) return'''
         m, s = divmod(int((self.total - self.idct) * self.avg), 60)
         h, m = divmod(m, 60)
@@ -439,7 +439,7 @@ class CtripCrawler():
             last_date = self.flight_date   #reset
             datarows = []
             for collect_date in dates:
-                curr = self.show_progress(dep, arr)
+                curr = self.show_progress(dep, arr, collect_date)
 
                 '''Get OUTbound flights data, attempts for ample data'''
                 for _ in range(attempt):
