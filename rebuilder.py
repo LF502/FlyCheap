@@ -1678,16 +1678,3 @@ class Rebuilder():
         wb.remove(wb.active)
         wb.save(path / Path(file))
         wb.close()
-
-if __name__ == '__main__':
-    rebuild = Rebuilder('2022-2-17')
-    rebuild.append_data('dataset_filtered.csv')
-    rebuild.adv(1, 7, '.charts', '提前天数相关系数1-7')
-    rebuild.adv(1, 5, '.charts', '提前天数相关系数1-5')
-    rebuild.adv(5, 10, '.charts', '提前天数相关系数5-10')
-    rebuild.adv(7, 14, '.charts', '提前天数相关系数7-14')
-    rebuild.adv(10, 15, '.charts', '提前天数相关系数10-15')
-    rebuild.adv(14, 30, '.charts', '提前天数相关系数14-30')
-    rebuild.adv(14, 21, '.charts', '提前天数相关系数14-21')
-    rebuild.adv(21, 30, '.charts', '提前天数相关系数21-30')
-    rebuild.adv(30, 0, '.charts', '提前天数相关系数30-')

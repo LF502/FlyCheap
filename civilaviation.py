@@ -47,6 +47,8 @@ class Airport:
                     else 'SHA' if __str == 'PVG' else 'CTU' if __str == 'TFU' \
                         else 'TPE' if __str == 'TSA' else __str
                 self.multi = self.code in _multi
+                self.airport = self.city + self.airport if len(self.airport) else self.city
+                self.airport_eng = self.city_eng + ' ' + self.airport_eng if len(self.airport_eng) else self.city_eng
             else:
                 raise ValueError(
                     "No such airport found,", 
@@ -94,10 +96,10 @@ class Airport:
             raise TypeError("String or class 'Airport' required")
     
     def __repr__(self):
-        return "{0}.{1}('{2}': ('{3}', '{4}{5}', ...))".format(
+        return "{0}.{1}('{2}': ('{3}', '{4}', ...))".format(
             self.__class__.__module__, 
             self.__class__.__qualname__, 
-            self.iata, self.icao, self.city, self.airport)
+            self.iata, self.icao, self.airport)
     
     def __str__(self):
         return self.city + self.airport if self.city in _multi else self.city
@@ -125,9 +127,9 @@ class Airport:
     
     @property
     def separates(self) -> tuple:
-        'iata, icao, city, airport name, city, airport name, latitude, longitude, type, code'
+        'iata, icao, city, airport name, city, airport name, latitude, longitude, type, code, multi'
         return self.iata, self.icao, self.city, self.airport, self.city_eng, self.airport_eng, \
-            self.latitude, self.longitude, self.type, self.code
+            self.latitude, self.longitude, self.type, self.code, self.multi
 
 
 class Route:
@@ -156,7 +158,7 @@ class Route:
             raise TypeError("String or class 'Airport' required")
     
     @classmethod
-    def fromformat(cls, __str:str , sep: str = '-'):
+    def fromformat(cls, __str: str, sep: str = '-'):
         return cls.__new__(Route, *(__str.split(sep, 1)))
     
     @classmethod
@@ -176,12 +178,7 @@ class Route:
     def citycmp(self, __other, __oneway = True, /):
         if isinstance(__other, Route):
             cmp = self.dep.citycmp(__other.dep) and self.arr.citycmp(__other.arr)
-            if __oneway:
-                return cmp
-            else:
-                return cmp or (self.arr.citycmp(__other.dep) and self.dep.citycmp(__other.arr))
-        elif isinstance(__other, str):
-            return self.citycmp(Route(__other, __oneway))
+            return cmp if __oneway else cmp or self.arr.citycmp(__other.dep) and self.dep.citycmp(__other.arr)
         else:
             return False
     
@@ -197,14 +194,8 @@ class Route:
         return hash(self.format('iata').encode())
     
     def format(self, key: str = 'code', sep: str = '-'):
-        if key == 'airport':
-            return f"{self.dep.city}{self.dep.airport}{sep}{self.arr.city}{self.arr.airport}"
-        elif key == 'airport_eng':
-            _d, _a = self.dep.airport_eng, self.arr.airport_eng
-            return f"{self.dep.city_eng} {_d}" if len(_d) else self.dep.city_eng + \
-                sep + f"{self.arr.city_eng} {_a}" if len(_a) else self.arr.city_eng 
-        else:
-            return f"{eval(f'self.dep.{key}')}{sep}{eval(f'self.arr.{key}')}"
+        return f"{eval(self.dep)}{sep}{eval(self.arr)}" if key == '' or key is None \
+            else f"{eval(f'self.dep.{key}')}{sep}{eval(f'self.arr.{key}')}"
     
     @property
     def returns(self):

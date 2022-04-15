@@ -11,7 +11,7 @@ from hashlib import md5
 from numpy.random import random, seed
 from random import choice
 from sys import exit
-from typing import Generator, Literal
+from typing import Callable, Generator, Iterable, Literal
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.cell import Cell
@@ -27,17 +27,16 @@ class CtripCrawler():
     Parameters
     -----
     - `targets`: All routes / cities to be collected
-    - `flight_date`: The starting date of collection (allow past dates)
-    - `days`: The number of days to be collected - date range: [flight_date, flight_date + days)
-    - `day_limit`: Maximum days advanced of flights - flight_date + days_maximum <= flight_date + day_limit
-    - `ignore_routes`: Routes to be ignored
-    - `ignore_threshold`: Routes whose flights are less than this value are not collected and noted
-    - `with_return`: Collect return flights
-    - `proxy`: Proxy url list or Proxypool or Disable
+    - `flight_date`: The starting date of collection (allow past dates), default: `date.today() + timedelta(1)` == tomorrow
+    - `days`: The number of days to be collected - date range: [flight_date, flight_date + days), default: 1
+    - `day_limit`: Maximum days advanced of flights - flight_date + days_maximum <= flight_date + day_limit, default: `0` == no limits
+    - `ignore_routes`: Routes to be ignored, default: `set()`
+    - `ignore_threshold`: Routes whose flights are less than this value are not collected and noted, default: `3`
+    - `with_return`: Collect return flights, default: `True`
     
     Methods
     -----
-    - `run`: Start the crawler in an order of route, flight date
+    - `run`: Start the crawler in an order of itinerary (each route and each flight date)
     - `proxy`: Return a proxy dict by the pre-set proxy parameter or ProxyPool
     
     See Also
@@ -69,13 +68,10 @@ class CtripCrawler():
     设置是否爬取返程: 是
     >>> with_return = True
 
-    设置代理: 代理网址集 (`字符串列表`) / 禁用 (`False`) / 使用ProxyPool (`None`)
-    >>> proxy = False
-
     构建爬虫
     >>> from flycheap import CtripCrawler
     >>> crawler = CtripCrawler(targets, flight_date, days, day_limit, 
-    ...     ignore_routes, ignore_threshold, with_return, proxy)
+    ...     ignore_routes, ignore_threshold, with_return)
 
     爬虫输出标题行
     >>> title = ['出发日期', '星期', '航司', '机型', '出发', '到达', '出发时刻', '到达时刻', '价格', '折扣']
@@ -94,8 +90,8 @@ class CtripCrawler():
         "Origin": "https://flights.ctrip.com", 
         "Referer": "https://flights.ctrip.com/international/search/domestic", }
     payload = {"flightWay": "Oneway", "classType": "ALL", "hasChild": False, "hasBaby": False, "searchIndex": 1}
-    dayOfWeek = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
-    userAgents = [
+    day_week = {1:'星期一', 2:'星期二', 3:'星期三', 4:'星期四', 5:'星期五', 6:'星期六', 7:'星期日'}
+    ua = [
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.2 Safari/605.1.15',
@@ -156,14 +152,13 @@ class CtripCrawler():
     
     def __init__(
         self, 
-        targets: list[str | Airport | Route], 
+        targets: Iterable[str | Airport | Route], 
         flight_date: date | tuple = date.today() + timedelta(1), 
         days: int = 1, 
         day_limit: int = 0, 
         ignore_routes: set = set(), 
         ignore_threshold: int = 3, 
-        with_return: bool = True, 
-        proxy: list[str] | bool | None = None) -> None:
+        with_return: bool = True, ) -> None:
 
         self.routes, cities = [], []
         for item in targets:
@@ -195,7 +190,7 @@ class CtripCrawler():
         self.days = days
         self.flight_date = flight_date if isinstance(flight_date, date) else \
             date(*flight_date) if isinstance(flight_date, tuple) else (date.today() + timedelta (1))
-        self.first_date = flight_date.isoformat()
+        self.first_date = self.flight_date.isoformat()
 
         '''Day range preprocess'''
         curr_date = date.today()
@@ -222,30 +217,26 @@ class CtripCrawler():
         self.limits = self.__threshold if self.__threshold else 1
         self.file = None
 
-        if proxy is False:
-            self.__proxy == False
-        elif isinstance(proxy, list):
-            self.proxylist = proxy
-            self.__proxy = 'proxy'
-        else:
-            self.__proxy = 'proxypool'
-
-    def proxy(self, key: Literal['proxy', 'proxypool'] = None) -> dict | None:
+    @staticmethod
+    def proxy(key: Literal['proxypool'] | str | Iterable[str] | int = None) -> dict | None:
         '''Get a random proxy from either proxylist or proxypool'''
-        if self.__proxy == 'proxy' or key == 'proxy':
-            return {"http": choice(self.proxylist)}
-        elif self.__proxy == 'proxypool' or key == 'proxypool':
+        if isinstance(key, str):
             for _ in range(3):
                 try:
-                    with get('http://127.0.0.1:5555/random', timeout = 3) as proxy:
+                    with get('http://127.0.0.1:5555/random' if key.lower() == 'proxypool' \
+                        else key, timeout = 3) as proxy:
                         proxy = proxy.text.strip()
                     if len(proxy):
                         return {"http": "http://" + proxy}
                 except:
                     continue
             else:
-                print(' ERROR: no proxy', end = '')
+                print(' ERROR: no proxy pool detected', end = '')
                 return sleep(3 * random())
+        elif isinstance(key, Iterable):
+            return {"http": choice(key)}
+        elif isinstance(key, (int, float)):
+            return sleep(key * random())
         else:
             return None
 
@@ -276,22 +267,22 @@ class CtripCrawler():
                 return "https://www.sogou.com/tx?" + urlencode({"ie": "utf8", "query": query})
 
 
-    def collector(self, flight_date: date, route: Route) -> tuple[tuple, list[list]]:
+    def collector(self, flight_date: date, route: Route, proxy) -> tuple[tuple, list[list]]:
         '''Web crawler main'''
         datarows = list()
         dcity, acity = route.separates('code')
-        departureName = dcityname = route.dep.city
-        arrivalName = acityname = route.arr.city
+        departureName, arrivalName = route.separates('city')
         header, payload = self.header, self.payload
-        dow = self.dayOfWeek[flight_date.isoweekday()]
-        header["User-Agent"] = choice(self.userAgents)
+        dow = self.day_week[flight_date.isoweekday()]
+        header["User-Agent"] = choice(self.ua)
         header["Referer"] = self.referers(route if random() > 0.3 else Route.random())
-        payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": dcityname,
-                                     "acityname": acityname, "date": flight_date.isoformat()}]
+        payload["airportParams"] = [{"dcity": dcity, "acity": acity, "dcityname": departureName,
+                                     "acityname": arrivalName, "date": flight_date.isoformat()}]
 
         try:
+            proxy = proxy() if isinstance(proxy, Callable) else self.proxy(proxy)
             response = post(
-                self.url, data = dumps(payload), headers = header, proxies = self.proxy(), timeout = 10)
+                self.url, data = dumps(payload), headers = header, proxies = proxy, timeout = 10)
             code, url = response.status_code, response.url
             data = response.json().get('data', {})
             response.close()
@@ -309,19 +300,15 @@ class CtripCrawler():
                             continue    # Shared flights not collected
                         airlineName = flight.get('airlineName')
                         if '旗下' in airlineName:   # Airline name should be as simple as possible
-                            airlineName = airlineName.split('旗下', 1)[1]   # Convert time
+                            airlineName = airlineName.split('旗下', 1)[1]
                         departureTime = time.fromisoformat(flight.get('departureDate').split(' ', 1)[1])
                         arrivalTime = time.fromisoformat(flight.get('arrivalDate').split(' ', 1)[1])
                         if route.dep.multi:  # Multi-airport cities need the airport name while others do not
-                            departureName = flight.get('departureAirportInfo').get('airportName')
-                            departureName = dcityname + departureName.strip('成都')[:2]
-                        elif not departureName:
-                            departureName = flight.get('departureAirportInfo').get('cityName')
+                            departureName = route.dep.city + \
+                                flight.get('departureAirportInfo').get('airportName').strip('成都')[:2]
                         if route.arr.multi:
-                            arrivalName = flight.get('arrivalAirportInfo').get('airportName')
-                            arrivalName = acityname + arrivalName.strip('成都')[:2]
-                        elif not arrivalName:
-                            arrivalName = flight.get('arrivalAirportInfo').get('cityName')
+                            arrivalName = route.arr.city + \
+                                flight.get('arrivalAirportInfo').get('airportName').strip('成都')[:2]
                         craftType = flight.get('craftTypeKindDisplayName')
                         craftType = craftType.strip('型') if craftType else "中"
                         ticket = legs[0].get('cabins')[0]   # Price info in cabins dict
@@ -346,13 +333,11 @@ class CtripCrawler():
             return flag, datarows
 
 
-    def show_progress(self, dcity: str, acity: str, dates: date) -> float:
+    def show_progress(self, flight_date: date, route: Route) -> float:
         '''Progress indicator with a current time (float) return'''
         m, s = divmod(int((self.total - self.idct) * self.avg), 60)
         h, m = divmod(m, 60)
-        if dates:
-            dates = dates.strftime('%m/%d')
-        print(f'\r{dcity}-{acity} {dates} >> eta {h:02d}:{m:02d}:{s:02d} >> ', 
+        print(f"\r{route.format()} {flight_date.strftime('%m/%d')} >> eta {h:02d}:{m:02d}:{s:02d} >> ", 
               end = f'{int(self.idct / self.total * 100):03d}%')
         return datetime.now().timestamp()
 
@@ -423,6 +408,14 @@ class CtripCrawler():
         -----
         - overwrite: `bool`, collect and overwrite existing files, default: `False`
         - nopreskip: `bool`, keep the orignal collect route without detection, default: `False`
+        
+        Set Proxy
+        -----
+        - proxy: `Callable[[], dict[str, str]]`, a function that returns proxy in dict (used by requests)
+        - proxy: `Literal['proxypool']`, using default API of ProxyPool (https://github.com/Python3WebSpider/ProxyPool) as proxy
+        - proxy: `str`, other proxy pool API that returns a proxy url each time (like default API of ProxyPool)
+        - proxy: `Iterable[str]`, list of proxy urls
+        - proxy: `int` | 'float', random sleep time within this seconds
         '''
         files = 0
         __ignores = set()
@@ -437,6 +430,7 @@ class CtripCrawler():
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
         antiempty: int = kwargs.get('antiempty') if kwargs.get('antiempty', 0) >= 1 else 0
+        proxy = kwargs['proxy'] if isinstance(kwargs.get('proxy'), (Callable, Iterable, int, float)) else None
 
         '''Part separates'''
         if overwrite or kwargs.get('nopreskip'):
@@ -473,11 +467,11 @@ class CtripCrawler():
             last_date = self.flight_date   #reset
             datarows = []
             for collect_date in dates:
-                curr = self.show_progress(dep, arr, collect_date)
+                curr = self.show_progress(collect_date, route)
 
                 '''Get OUTbound flights data, attempts for ample data'''
                 for _ in range(attempt):
-                    flag, datarow = self.collector(collect_date, route)
+                    flag, datarow = self.collector(collect_date, route, proxy)
                     while flag[1] != 'V2':
                         if flag[1] == 'Timeout' or flag[0] != 200:
                             print(f'  ...timeout, code: {flag[0]}', end = '')
@@ -489,7 +483,7 @@ class CtripCrawler():
                             except EOFError:
                                 exit(0)
                         curr = datetime.now().timestamp()
-                        flag, datarow = self.collector(collect_date, route)
+                        flag, datarow = self.collector(collect_date, route, proxy)
                     if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow)):
                         if collect_date > last_date:
                             last_date = collect_date
@@ -513,7 +507,7 @@ class CtripCrawler():
                 '''Get INbound flights data, attempts for ample data'''
                 if self.with_return:
                     for _ in range(attempt):
-                        flag, datarow = self.collector(collect_date, route.returns)
+                        flag, datarow = self.collector(collect_date, route.returns, proxy)
                         while flag[1] != 'V2':
                             if flag[1] == 'Timeout' or flag[0] != 200:
                                 print(f'  ...timeout, code: {flag[0]}', end = '')
@@ -525,7 +519,7 @@ class CtripCrawler():
                                 except EOFError:
                                     exit(0)
                             curr = datetime.now().timestamp()
-                            flag, datarow = self.collector(collect_date, route)
+                            flag, datarow = self.collector(collect_date, route, proxy)
                         if len(datarow) >= self.limits or (collect_date != self.flight_date and len(datarow) > 0):
                             if collect_date > last_date:
                                 last_date = collect_date 
@@ -624,12 +618,11 @@ class CtripSearcher(CtripCrawler):
             return "", None
 
 
-    def collector(self, flight_date: date, route: Route) -> tuple[tuple, list[list]]:
+    def collector(self, flight_date: date, route: Route, proxy) -> tuple[tuple, list[list]]:
         datarows = list()
         dcity, acity = route.separates('code')
-        departureName = dcityname = route.dep.city
-        arrivalName = acityname = route.arr.city
-        dow = self.dayOfWeek[flight_date.isoweekday()]
+        departureName, arrivalName = route.separates('city')
+        dow = self.day_week[flight_date.isoweekday()]
         transaction_id, data = self.transaction_id(dcity, acity, flight_date, self.proxy())
         if transaction_id == "" or data is None:
             return datarows
@@ -637,11 +630,12 @@ class CtripSearcher(CtripCrawler):
         self.header["transactionid"] = transaction_id
         self.header["sign"] = self.sign(transaction_id, dcity, acity, flight_date)
         self.header["scope"] = data["scope"]
-        self.header["user-agent"] = choice(self.userAgents)
+        self.header["user-agent"] = choice(self.ua)
         self.header["cookie"] = self.cookie()
 
         try:
-            response = post(self.url, data = dumps(data), headers = self.header, proxies = self.proxy(), timeout = 10)
+            proxy = proxy() if isinstance(proxy, Callable) else self.proxy(proxy)
+            response = post(self.url, data = dumps(data), headers = self.header, proxies = proxy, timeout = 10)
             code, url = response.status_code, response.url
             routeList = response.json()
             response.close()
@@ -665,15 +659,9 @@ class CtripSearcher(CtripCrawler):
                         departureTime = time.fromisoformat(flight.get('departureDateTime').split(' ', 1)[1])
                         arrivalTime = time.fromisoformat(flight.get('arrivalDateTime').split(' ', 1)[1])
                         if route.dep.multi:  # Multi-airport cities need the airport name while others do not
-                            departureName = flight.get('departureAirportShortName')
-                            departureName = dcityname + departureName[:2]
-                        elif not departureName: # If dcityname exists, that means the code-name is in the default code-name dict
-                            departureName = flight.get('departureCityName')
+                            departureName = route.dep.city + flight.get('departureAirportShortName')[:2]
                         if route.arr.multi:
-                            arrivalName = flight.get('arrivalAirportShortName')
-                            arrivalName = acityname + arrivalName[:2]
-                        elif not arrivalName:
-                            arrivalName = flight.get('arrivalCityName')
+                            arrivalName = route.arr.city + flight.get('arrivalAirportShortName')[:2]
                         craftType = flight.get('aircraftSize')
                         priceList = priceList[0]
                         price = priceList.get('sortPrice')
@@ -698,7 +686,7 @@ class CtripSearcher(CtripCrawler):
 
 class ItineraryCollector(CtripCrawler):
     '''
-    Collect itineraries (route - date) in an random order.
+    Collect itineraries (each route and each flight date) in a random order.
     
     Parameters see class `CtripCrawler`
     '''
@@ -726,9 +714,17 @@ class ItineraryCollector(CtripCrawler):
         -----
         - tempfile: `Path | str`, where the data stores.
         - skips: `List-like | Set-like`, itineraries to be skiped in format of 
-        `f'{Route.format()} {date}' | tuple[date, Route]`.
+            `f'{Route.format()} {date}' | tuple[date, Route]`.
         - randomseed: `int | None`, seed of randomizing itineraries, 
         default: `date.today().toordinal() % 100`
+        
+        Set Proxy
+        -----
+        - proxy: `Callable[[], dict[str, str]]`, a function that returns proxy in dict (used by requests)
+        - proxy: `Literal['proxypool']`, using default API of ProxyPool (https://github.com/Python3WebSpider/ProxyPool) as proxy
+        - proxy: `str`, other proxy pool API that returns a proxy url each time (like default API of ProxyPool)
+        - proxy: `Iterable[str]`, list of proxy urls
+        - proxy: `int` | 'float', random sleep time within this seconds
         '''
         
         header = ['flight_date', 'dow', 'airlineName', 'craftType', 'departureName', 'arrivalName', 
@@ -744,6 +740,7 @@ class ItineraryCollector(CtripCrawler):
         noretry: list = kwargs.get('noretry', [])
         attempt: int = kwargs.get('attempt', 3) if kwargs.get('attempt', 3) > 1 else 1
         skips |= set(kwargs.get('skips', []))
+        proxy = kwargs['proxy'] if isinstance(kwargs.get('proxy'), (Callable, Iterable, int, float)) else None
         
         itineraries = []
         for itinerary in self.itineraries:
@@ -764,9 +761,9 @@ class ItineraryCollector(CtripCrawler):
         
         for itinerary in itineraries:
             dep, arr = itinerary[1].separates('code')
-            curr = self.show_progress(dep, arr, itinerary[0])
+            curr = self.show_progress(*itinerary)
             for _ in range(attempt):
-                flag, datarow = self.collector(*itinerary)
+                flag, datarow = self.collector(*itinerary, proxy)
                 while flag[1] != 'V2':
                     if flag[1] == 'Timeout' or flag[0] != 200:
                         print(f'  ...timeout, code: {flag[0]}', end = '')
@@ -778,7 +775,7 @@ class ItineraryCollector(CtripCrawler):
                         except EOFError:
                             exit(0)
                     curr = datetime.now().timestamp()
-                    flag, datarow = self.collector(*itinerary)
+                    flag, datarow = self.collector(*itinerary, proxy)
                 if len(datarow) >= self.limits or (itinerary[0] != self.flight_date and len(datarow)):
                     DataFrame(datarow).assign(
                         itinerary = f'{dep}-{arr} {itinerary[0]}').to_csv(
@@ -829,5 +826,3 @@ class ItineraryCollector(CtripCrawler):
                 self.file = self.output_excel(
                     group, *route, path, kwargs.get('values_only', False), self.with_return)
             yield group
-
-
