@@ -3,9 +3,9 @@ from civilaviation import Airport, skipped_routes
 from datetime import date, datetime
 from argparse import ArgumentParser
 from pathlib import Path
-from time import time
 from pandas import DataFrame
 import sys
+import time
 
 class Log():
     def __init__(self, logfile: str):

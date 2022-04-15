@@ -26,27 +26,66 @@ class CtripCrawler():
     
     Parameters
     -----
-    `targets`: All routes / cities to be collected
-    `flight_date`: The starting date of collection (allow past dates)
-    `days`: The number of days to be collected - date range: [flight_date, flight_date + days)
-    `day_limit`: Maximum days advanced of flights - flight_date + days_maximum <= flight_date + day_limit
-    `ignore_routes`: Routes to be ignored
-    `ignore_threshold`: Routes whose flights are less than this value are not collected and noted
-    `with_return`: Collect return flights
-    `proxy`: Set proxy method
+    - `targets`: All routes / cities to be collected
+    - `flight_date`: The starting date of collection (allow past dates)
+    - `days`: The number of days to be collected - date range: [flight_date, flight_date + days)
+    - `day_limit`: Maximum days advanced of flights - flight_date + days_maximum <= flight_date + day_limit
+    - `ignore_routes`: Routes to be ignored
+    - `ignore_threshold`: Routes whose flights are less than this value are not collected and noted
+    - `with_return`: Collect return flights
+    - `proxy`: Proxy url list or Proxypool or Disable
     
     Methods
     -----
-    `run`: Start the crawler in an order of route, flight date
-    `proxy`: Return a proxy dict by the pre-set proxy parameter or ProxyPool
+    - `run`: Start the crawler in an order of route, flight date
+    - `proxy`: Return a proxy dict by the pre-set proxy parameter or ProxyPool
     
     See Also
     -----
-    - `ctripcrawler.CtripSearcher`: Batch search method (Another API)
-    - `ctripcrawler.ItineraryCollector`: Collect data by random itineraries
+    - `CtripSearcher`: Batch search method (Another API)
+    - `ItineraryCollector`: Collect data by random itineraries
     
-    """
+    Examples
+    -----
+    构建城市列表, 支持输入IATA/ICAO代码或城市名称; 亦可输入 Route / Airport 类: 北京, 南京, 上海之间航线
+    >>> targets = ['BJS', 'NKG', 'SHA']
 
+    设置起始爬取日期: 从今天开始 (今日将跳过)
+    >>> from datetime import date
+    >>> flight_date = date.today()
+    
+    设置爬取天数: 7天
+    >>> days = 7
+    
+    设置最多爬取天数 (防止爬取的航班出发日期过远): 无限制 (0)
+    >>> day_limit = 0
+    
+    设置忽略阈值, 低于该值则不统计航班, 0为都爬取并统计: 忽略3条及以下
+    >>> ignore_threshold = 3
+    
+    设置忽略的往返航线, 可用Route或tuple表示: 北京-上海航线
+    >>> ignore_routes = set(('BJS', 'SHA'))
+
+    设置是否爬取返程: 是
+    >>> with_return = True
+
+    设置代理: 代理网址集 (`字符串列表`) / 禁用 (`False`) / 使用ProxyPool (`None`)
+    >>> proxy = False
+
+    构建爬虫
+    >>> from flycheap import CtripCrawler
+    >>> crawler = CtripCrawler(targets, flight_date, days, day_limit, 
+    ...     ignore_routes, ignore_threshold, with_return, proxy)
+
+    爬虫输出标题行
+    >>> title = ['出发日期', '星期', '航司', '机型', '出发', '到达', '出发时刻', '到达时刻', '价格', '折扣']
+
+    运行爬虫
+    >>> from pandas import DataFrame
+    >>> for data in crawler.run():
+    ...     DataFrame(data, columns = title).assign(**{'收集日期': date.today()})
+    """
+    
     url = "https://flights.ctrip.com/itinerary/api/12808/products"
     header = {
         "Content-Type": "application/json;charset=utf-8", 
@@ -118,13 +157,13 @@ class CtripCrawler():
     def __init__(
         self, 
         targets: list[str | Airport | Route], 
-        flight_date: date = date.today() + timedelta(1), 
+        flight_date: date | tuple = date.today() + timedelta(1), 
         days: int = 1, 
         day_limit: int = 0, 
         ignore_routes: set = set(), 
         ignore_threshold: int = 3, 
         with_return: bool = True, 
-        proxy: str | bool | None = None) -> None:
+        proxy: list[str] | bool | None = None) -> None:
 
         self.routes, cities = [], []
         for item in targets:
@@ -154,7 +193,9 @@ class CtripCrawler():
             raise IndexError('No valid routes!')
 
         self.days = days
-        self.flight_date, self.first_date = flight_date, flight_date.isoformat()
+        self.flight_date = flight_date if isinstance(flight_date, date) else \
+            date(*flight_date) if isinstance(flight_date, tuple) else (date.today() + timedelta (1))
+        self.first_date = flight_date.isoformat()
 
         '''Day range preprocess'''
         curr_date = date.today()
@@ -183,16 +224,9 @@ class CtripCrawler():
 
         if proxy is False:
             self.__proxy == False
-        elif isinstance(proxy, str):
-            try:
-                with get(proxy) as proxy:
-                    proxy = proxy.json().get("data")
-                self.proxylist = []
-                for item in proxy:
-                    self.proxylist.append(f"http://{item.get('ip')}:{item.get('port')}")
-                self.__proxy = 'proxy' if len(self.proxylist) else 'proxypool'
-            except:
-                self.__proxy = 'proxypool'
+        elif isinstance(proxy, list):
+            self.proxylist = proxy
+            self.__proxy = 'proxy'
         else:
             self.__proxy = 'proxypool'
 
@@ -797,24 +831,3 @@ class ItineraryCollector(CtripCrawler):
             yield group
 
 
-if __name__ == "__main__":
-
-    # 务必先设置代理: Docker Desktop / cmd -> cd ProxyPool -> docker-compose up -> (idle) -> start
-
-    # 城市列表, 支持输入IATA/ICAO代码或城市名称；亦可输入 Route / Airport 类
-    cities = []
-
-    # 忽略阈值, 低于该值则不统计航班, 0为都爬取并统计
-    ignore_threshold = 3
-    #忽略的航线，可用Route或tuple表示
-    ignore_routes = set()
-
-    # 代理: 字符串 - 代理网址API / False - 禁用 / 不填 - 使用ProxyPool
-    proxyurl = None
-
-    # 航班爬取: 机场三字码列表、起始年月日、往后天数
-    # 其他参数: 提前天数限制、手动忽略集、忽略阈值 -> 暂不爬取共享航班与经停 / 转机航班数据、是否双向爬取
-    # 运行参数: 是否输出文件 (否: 生成列表) 、存储路径、是否带格式
-    crawler = CtripCrawler(cities, date(2022, 3, 31), 2, 0, ignore_routes, ignore_threshold, True)
-    for data in crawler.run():
-        pass

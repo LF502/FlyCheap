@@ -4,8 +4,8 @@ from datetime import date
 from __init__ import Log
 from argparse import ArgumentParser
 from pathlib import Path
-from time import time
 import sys
+import time
 
 class Log():
     def __init__(self, logfile: str):
