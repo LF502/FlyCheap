@@ -47,8 +47,8 @@ class Airport:
                     else 'SHA' if __str == 'PVG' else 'CTU' if __str == 'TFU' \
                         else 'TPE' if __str == 'TSA' else __str
                 self.multi = self.code in _multi
-                self.airport = self.city + self.airport if len(self.airport) else self.city
-                self.airport_eng = self.city_eng + ' ' + self.airport_eng if len(self.airport_eng) else self.city_eng
+                self.airport = (self.city + self.airport) if len(self.airport) else self.city
+                self.airport_eng = (self.city_eng + ' ' + self.airport_eng) if len(self.airport_eng) else self.city_eng
             else:
                 raise ValueError(
                     "No such airport found,", 
@@ -102,7 +102,7 @@ class Airport:
             self.iata, self.icao, self.airport)
     
     def __str__(self):
-        return self.city + self.airport if self.city in _multi else self.city
+        return self.airport if self.city in _multi else self.city
     
     @classmethod
     def random(cls):
