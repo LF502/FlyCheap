@@ -1,17 +1,20 @@
-__all__ = ('Airline', 'Airport', 'Route', 'copy_data')
+__all__ = ('Airline', 'Airport', 'Route', 'copy_data', 'get_throughput')
 
 from random import choice
 from typing import Literal
 from pandas import DataFrame, read_csv
+from pathlib import Path
 
-_airport = read_csv(r'.\_airport.csv').fillna('')
+_airport = read_csv(Path(__file__).parent / Path('_airport.csv')).fillna('')
 _airport['province'] = _airport['province'].astype('category')
 _airport['airport'] = _airport['city'] + _airport['airport']
-_airline = read_csv(r'.\_airline.csv').fillna('')
+_airline = read_csv(Path(__file__).parent / Path('_airline.csv')).fillna('')
 _airline['country'] = _airline['country'].astype('category')
+_throughput = read_csv(Path(__file__).parent / Path('_throughput.csv'), index_col = 'airport').fillna(0).astype('int')
 
 def copy_data(__key: Literal['airport', 'airline', 'throughput'], __deep: bool = True) -> DataFrame:
     return eval(f'_{__key}.copy({__deep})')
+
 class AirlineNotFound(KeyError): ...
 class AirportNotFound(KeyError): ...
 class InvalidCode(ValueError): ...
@@ -316,6 +319,12 @@ class Route:
         return (self.dep.code, self.arr.code) in skipped_routes \
             or (self.arr.code, self.dep.code) in skipped_routes
 
+def get_throughput(
+    __ap: Airport | str, 
+    __k1: Literal['passenger', 'cargomail', 'cycles'], 
+    __k2: Literal[2018, 2019, 'rank']) -> int:
+    __ap = __ap.iata if isinstance(__ap, Airport) else Airport(__ap).iata
+    return _throughput.loc[__ap][f'{__k1}_{__k2}']
 
 _inactive = {
     ('BJS', 'TSN'), ('BJS', 'SJW'), ('BJS', 'TYN'), ('BJS', 'TNA'), 
